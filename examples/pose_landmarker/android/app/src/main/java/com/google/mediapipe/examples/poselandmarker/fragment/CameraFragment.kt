@@ -137,17 +137,26 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
         }
 
         // Create the PoseLandmarkerHelper that will handle the inference
-        backgroundExecutor.execute {
-            poseLandmarkerHelper = PoseLandmarkerHelper(
-                context = requireContext(),
-                runningMode = RunningMode.LIVE_STREAM,
-                minPoseDetectionConfidence = viewModel.currentMinPoseDetectionConfidence,
-                minPoseTrackingConfidence = viewModel.currentMinPoseTrackingConfidence,
-                minPosePresenceConfidence = viewModel.currentMinPosePresenceConfidence,
-                currentDelegate = viewModel.currentDelegate,
-                poseLandmarkerHelperListener = this
-            )
-        }
+//        backgroundExecutor.execute {
+//            poseLandmarkerHelper = PoseLandmarkerHelper(
+//                context = requireContext(),
+//                runningMode = RunningMode.LIVE_STREAM,
+//                minPoseDetectionConfidence = viewModel.currentMinPoseDetectionConfidence,
+//                minPoseTrackingConfidence = viewModel.currentMinPoseTrackingConfidence,
+//                minPosePresenceConfidence = viewModel.currentMinPosePresenceConfidence,
+//                currentDelegate = viewModel.currentDelegate,
+//                poseLandmarkerHelperListener = this
+//            )
+//        }
+        poseLandmarkerHelper = PoseLandmarkerHelper(
+            context = requireContext(),
+            runningMode = RunningMode.LIVE_STREAM,
+            minPoseDetectionConfidence = viewModel.currentMinPoseDetectionConfidence,
+            minPoseTrackingConfidence = viewModel.currentMinPoseTrackingConfidence,
+            minPosePresenceConfidence = viewModel.currentMinPosePresenceConfidence,
+            currentDelegate = viewModel.currentDelegate,
+            poseLandmarkerHelperListener = this
+        )
 
         // Attach listeners to UI control widgets
         initBottomSheetControls()
