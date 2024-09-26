@@ -17,6 +17,7 @@ package com.google.mediapipe.examples.poselandmarker
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -149,6 +150,36 @@ class PoseLandmarkerHelper(
         }
     }
 
+//    private fun isPointInTrapezoid(x: Float, y: Float): Boolean {
+//        // 벡터 크로스 곱을 사용해 점이 다각형 내부에 있는지 확인하는 기본 알고리즘
+//        // 여기서는 간단하게 사다리꼴의 네 면을 모두 검사하는 방식으로 구현
+//
+//        // 좌표를 벡터로 변환하여 사다리꼴의 네 면과의 상대적인 위치를 계산
+//        val v1 = (topRightX - topLeftX) * (y - topLeftY) - (topRightY - topLeftY) * (x - topLeftX)
+//        val v2 = (bottomRightX - topRightX) * (y - topRightY) - (bottomRightY - topRightY) * (x - topRightX)
+//        val v3 = (bottomLeftX - bottomRightX) * (y - bottomRightY) - (bottomLeftY - bottomRightY) * (x - bottomRightX)
+//        val v4 = (topLeftX - bottomLeftX) * (y - bottomLeftY) - (topLeftY - bottomLeftY) * (x - bottomLeftX)
+//
+//        return (v1 >= 0 && v2 >= 0 && v3 >= 0 && v4 >= 0)
+//    }
+
+    fun isPointInTrapezoid(
+        x: Float, y: Float,
+        topLeftX: Float, topLeftY: Float,
+        topRightX: Float, topRightY: Float,
+        bottomLeftX: Float, bottomLeftY: Float,
+        bottomRightX: Float, bottomRightY: Float
+    ): Boolean {
+        // Use vector cross product to check if the point is inside the trapezoid
+        val v1 = (topRightX - topLeftX) * (y - topLeftY) - (topRightY - topLeftY) * (x - topLeftX)
+        val v2 = (bottomRightX - topRightX) * (y - topRightY) - (bottomRightY - topRightY) * (x - topRightX)
+        val v3 = (bottomLeftX - bottomRightX) * (y - bottomRightY) - (bottomLeftY - bottomRightY) * (x - bottomRightX)
+        val v4 = (topLeftX - bottomLeftX) * (y - bottomLeftY) - (topLeftY - bottomLeftY) * (x - bottomLeftX)
+
+        // The point is inside the trapezoid if all cross products are either positive or negative
+        return (v1 >= 0 && v2 >= 0 && v3 >= 0 && v4 >= 0) || (v1 <= 0 && v2 <= 0 && v3 <= 0 && v4 <= 0)
+    }
+
     // Convert the ImageProxy to MP Image and feed it to PoselandmakerHelper.
     fun detectLiveStream(
         imageProxy: ImageProxy,
@@ -192,7 +223,47 @@ class PoseLandmarkerHelper(
             matrix, true
         )
 
-        // Convert the input Bitmap object to an MPImage object to run inference
+//        val cropWidth = 240
+//        val cropHeight = 270
+//        val cropLeft = (640 - cropWidth) / 2  // Center horizontally
+////        val cropTop = (480 - cropHeight) / 2  // Center vertically
+//        val cropTop = 70
+//        val cropRight = cropLeft + cropWidth   // X-coordinate of bottom-right corner
+//        val cropBottom = cropTop + cropHeight  // Y-coordinate of bottom-right corner
+//
+//        // Iterate over all pixels and set pixels outside the crop area to black
+//        for (x in 0 until rotatedBitmap.width) {
+//            for (y in 0 until rotatedBitmap.height) {
+//                if (x < cropLeft || x > cropRight || y < cropTop || y > cropBottom) {
+//                    // Set pixel to black if outside the defined crop area
+//                    rotatedBitmap.setPixel(x, y, Color.BLACK)
+//                }
+//            }
+//        }
+        val cropWidth = 160f
+        val cropWidthBottom = 320f
+        val cropHeight = 270f
+
+        val topLeftX = (imageProxy.width.toFloat() - cropWidth) / 2f
+        val topLeftY = 70f
+        val topRightX = topLeftX + cropWidth
+        val topRightY = topLeftY
+        val bottomLeftX = (imageProxy.width.toFloat() - cropWidthBottom) / 2f
+        val bottomLeftY = topLeftY + cropHeight
+        val bottomRightX = bottomLeftX + cropWidthBottom
+        val bottomRightY = bottomLeftY
+
+        // Iterate over all pixels and set pixels outside the trapezoid to black
+        for (x in 0 until rotatedBitmap.width) {
+            for (y in 0 until rotatedBitmap.height) {
+                if (!isPointInTrapezoid(x.toFloat(), y.toFloat(), topLeftX, topLeftY, topRightX, topRightY, bottomLeftX, bottomLeftY, bottomRightX, bottomRightY)) {
+                    // Set pixel to black if outside the defined trapezoid area
+                    rotatedBitmap.setPixel(x, y, Color.BLACK)
+                }
+            }
+        }
+
+        // Convert the modified Bitmap object to an MPImage object to run inference
         val mpImage = BitmapImageBuilder(rotatedBitmap).build()
 
         detectAsync(mpImage, frameTime)

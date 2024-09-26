@@ -15,6 +15,7 @@
  */
 package com.google.mediapipe.examples.poselandmarker
 
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 
 /**
@@ -62,4 +63,7 @@ class MainViewModel : ViewModel() {
     fun setModel(model: Int) {
         _model = model
     }
+
+    val rawbedStatus: MutableLiveData<Boolean> = MutableLiveData()
+    val bedStatus: MutableLiveData<Boolean> = MutableLiveData()
 }

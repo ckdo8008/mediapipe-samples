@@ -22,6 +22,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
@@ -39,6 +40,10 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
     private var imageWidth: Int = 1
     private var imageHeight: Int = 1
 
+    val viewModel: MainViewModel by lazy {
+        ViewModelProvider(MainActivity.instance)[MainViewModel::class.java]
+    }
+
     init {
         initPaints()
     }
@@ -52,8 +57,9 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
     }
 
     private fun initPaints() {
-        linePaint.color =
-            ContextCompat.getColor(context!!, R.color.mp_color_primary)
+//        linePaint.color =
+//            ContextCompat.getColor(context!!, R.color.mp_color_primary)
+        linePaint.color =  Color.CYAN
         linePaint.strokeWidth = LANDMARK_STROKE_WIDTH
         linePaint.style = Paint.Style.STROKE
 
@@ -62,10 +68,42 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         pointPaint.style = Paint.Style.FILL
     }
 
+    private val rectPaint = Paint().apply {
+        color = Color.GREEN
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+
+//    private var cropLeft = 0
+//    private var cropTop = 0
+//    private var cropRight = 0
+//    private var cropBottom = 0
+
+    private var topLeftX = 150f
+    private var topLeftY = 200f
+    private var topRightX = 490f
+    private var topRightY = 200f
+    private var bottomLeftX = 100f
+    private var bottomLeftY = 700f
+    private var bottomRightX = 540f
+    private var bottomRightY = 700f
+
+    private fun createTrapezoidPath(): android.graphics.Path {
+        val path = android.graphics.Path()
+        path.moveTo(topLeftX, topLeftY)       // Move to top-left corner
+        path.lineTo(topRightX, topRightY)     // Draw line to top-right corner
+        path.lineTo(bottomRightX, bottomRightY) // Draw line to bottom-right corner
+        path.lineTo(bottomLeftX, bottomLeftY)   // Draw line to bottom-left corner
+        path.close()  // Close the path
+        return path
+    }
+
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
         results?.let { poseLandmarkerResult ->
             for(landmark in poseLandmarkerResult.landmarks()) {
+                // Draw the green rectangle
+
                 for(normalizedLandmark in landmark) {
                     canvas.drawPoint(
                         normalizedLandmark.x() * imageWidth * scaleFactor,
@@ -84,8 +122,12 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                 }
             }
         }
+//        canvas.drawRect(cropLeft.toFloat(), cropTop.toFloat(), cropRight.toFloat(), cropBottom.toFloat(), rectPaint)
+        val trapezoidPath = createTrapezoidPath()
+        canvas.drawPath(trapezoidPath, rectPaint)
     }
 
+    private var lastStateChangeTime: Long = 0L
     fun setResults(
         poseLandmarkerResults: PoseLandmarkerResult,
         imageHeight: Int,
@@ -93,6 +135,24 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         runningMode: RunningMode = RunningMode.IMAGE
     ) {
         results = poseLandmarkerResults
+
+        val currentTime = System.currentTimeMillis()
+        if (results!!.landmarks().size > 0) {
+            if (viewModel.rawbedStatus.value != true) {
+                viewModel.rawbedStatus.value = true
+                lastStateChangeTime = currentTime
+            }
+        } else {
+            if (viewModel.rawbedStatus.value != false) {
+                viewModel.rawbedStatus.value = false
+                lastStateChangeTime = currentTime
+            }
+        }
+
+        if (currentTime - lastStateChangeTime >= 2000) {
+            if (viewModel.bedStatus.value != viewModel.rawbedStatus.value)
+                viewModel.bedStatus.value = viewModel.rawbedStatus.value
+        }
 
         this.imageHeight = imageHeight
         this.imageWidth = imageWidth
@@ -109,10 +169,31 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                 max(width * 1f / imageWidth, height * 1f / imageHeight)
             }
         }
+
+        val cropWidth = 160
+        val cropWidthBottom = 320
+        val cropHeight = 270
+//        cropLeft = ((imageWidth - cropWidth) / 2 * scaleFactor).toInt()
+//        cropTop = (70 * scaleFactor).toInt()
+//        cropRight = cropLeft + (cropWidth * scaleFactor).toInt()
+//        cropBottom = cropTop + (cropHeight * scaleFactor).toInt()
+
+        topLeftX = ((imageWidth - cropWidth) / 2 * scaleFactor)
+        topLeftY = 70 * scaleFactor
+
+        topRightX = topLeftX + (cropWidth * scaleFactor).toInt()
+        topRightY = topLeftY
+
+        bottomLeftX = ((imageWidth - cropWidthBottom) / 2 * scaleFactor)
+        bottomLeftY = topLeftY + (cropHeight * scaleFactor).toInt()
+
+        bottomRightX = bottomLeftX + (cropWidthBottom * scaleFactor).toInt()
+        bottomRightY = bottomLeftY
+
         invalidate()
     }
 
     companion object {
-        private const val LANDMARK_STROKE_WIDTH = 12F
+        private const val LANDMARK_STROKE_WIDTH = 6F
     }
 }
