@@ -37,6 +37,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
     private var linePaint = Paint()
 
     private var scaleFactor: Float = 1f
+    private var scaleFactorResult: Float = 1f
     private var imageWidth: Int = 1
     private var imageHeight: Int = 1
 
@@ -79,14 +80,14 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
 //    private var cropRight = 0
 //    private var cropBottom = 0
 
-    private var topLeftX = 150f
-    private var topLeftY = 200f
-    private var topRightX = 490f
-    private var topRightY = 200f
-    private var bottomLeftX = 100f
-    private var bottomLeftY = 700f
-    private var bottomRightX = 540f
-    private var bottomRightY = 700f
+    private var topLeftX = 0f
+    private var topLeftY = 0f
+    private var topRightX = 0f
+    private var topRightY = 0f
+    private var bottomLeftX = 0f
+    private var bottomLeftY = 0f
+    private var bottomRightX = 0f
+    private var bottomRightY = 0f
 
     private fun createTrapezoidPath(): android.graphics.Path {
         val path = android.graphics.Path()
@@ -106,18 +107,18 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
 
                 for(normalizedLandmark in landmark) {
                     canvas.drawPoint(
-                        normalizedLandmark.x() * imageWidth * scaleFactor,
-                        normalizedLandmark.y() * imageHeight * scaleFactor,
+                        (132 + (normalizedLandmark.x() * imageWidth)) * scaleFactorResult,
+                        normalizedLandmark.y() * imageHeight * scaleFactorResult,
                         pointPaint
                     )
                 }
 
                 PoseLandmarker.POSE_LANDMARKS.forEach {
                     canvas.drawLine(
-                        poseLandmarkerResult.landmarks().get(0).get(it!!.start()).x() * imageWidth * scaleFactor,
-                        poseLandmarkerResult.landmarks().get(0).get(it.start()).y() * imageHeight * scaleFactor,
-                        poseLandmarkerResult.landmarks().get(0).get(it.end()).x() * imageWidth * scaleFactor,
-                        poseLandmarkerResult.landmarks().get(0).get(it.end()).y() * imageHeight * scaleFactor,
+                        (132 + (poseLandmarkerResult.landmarks().get(0).get(it!!.start()).x() * imageWidth)) * scaleFactorResult,
+                        poseLandmarkerResult.landmarks().get(0).get(it.start()).y() * imageHeight * scaleFactorResult,
+                        (132 + (poseLandmarkerResult.landmarks().get(0).get(it.end()).x() * imageWidth)) * scaleFactorResult,
+                        poseLandmarkerResult.landmarks().get(0).get(it.end()).y() * imageHeight * scaleFactorResult,
                         linePaint)
                 }
             }
@@ -169,14 +170,11 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                 max(width * 1f / imageWidth, height * 1f / imageHeight)
             }
         }
+        scaleFactorResult = min(width * 1f / imageWidth, height * 1f / imageHeight)
 
         val cropWidth = 160
         val cropWidthBottom = 320
         val cropHeight = 270
-//        cropLeft = ((imageWidth - cropWidth) / 2 * scaleFactor).toInt()
-//        cropTop = (70 * scaleFactor).toInt()
-//        cropRight = cropLeft + (cropWidth * scaleFactor).toInt()
-//        cropBottom = cropTop + (cropHeight * scaleFactor).toInt()
 
         topLeftX = ((imageWidth - cropWidth) / 2 * scaleFactor)
         topLeftY = 70 * scaleFactor
