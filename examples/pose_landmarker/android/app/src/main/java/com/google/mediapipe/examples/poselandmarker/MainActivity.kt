@@ -28,8 +28,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.BufferedReader
 import java.net.HttpURLConnection
 import java.net.URL
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var activityMainBinding: ActivityMainBinding
@@ -57,7 +59,43 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        viewModel.bedStatus.value = false
+        viewModel.bedStatus.value = true
+    }
+
+    private suspend fun getStatus(): String? {
+        val url = URL("https://7gb9b8se68.execute-api.ap-northeast-2.amazonaws.com/prod/status") // API Gateway URL
+        val jsonBody = JSONObject().apply {
+            put("duid", "smartbed1")
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                connection.outputStream.use { os ->
+                    val input = jsonBody.toString().toByteArray()
+                    os.write(input, 0, input.size)
+                }
+
+                val responseCode = connection.responseCode
+                if (responseCode >= 200 && responseCode < 400){
+                    val allText: String = connection.inputStream.bufferedReader().use(BufferedReader::readText)
+                    val jsonObject = JSONObject(allText)
+                    val resultObject = jsonObject.getJSONObject("result")
+                    val itemsObject = resultObject.getJSONObject("items")
+                    itemsObject.getString("status")
+                }
+                else {
+                    null
+                }
+            } catch (e: Exception) {
+                println("Error calling Lambda: $e")
+                null
+            }
+        }
     }
 
     private suspend fun callLambdaFunction(status: String) {
@@ -83,6 +121,11 @@ class MainActivity : AppCompatActivity() {
                 println("Response Code: $responseCode")
             } catch (e: Exception) {
                 println("Error calling Lambda: $e")
+            }
+
+            if (getStatus() != status) {
+                println("Fail data : ${getStatus()}")
+                callLambdaFunction(status)
             }
         }
     }
