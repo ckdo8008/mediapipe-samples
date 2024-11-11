@@ -102,6 +102,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
         results?.let { poseLandmarkerResult ->
+//            poseLandmarkerResult.worldLandmarks()
             for(landmark in poseLandmarkerResult.landmarks()) {
                 // Draw the green rectangle
 
@@ -111,6 +112,9 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                         normalizedLandmark.y() * imageHeight * scaleFactorResult,
                         pointPaint
                     )
+
+//                    println("idx : ${landmark.indexOf(normalizedLandmark)}, ${normalizedLandmark.toString()}")
+//                    println(normalizedLandmark)
                 }
 
                 PoseLandmarker.POSE_LANDMARKS.forEach {

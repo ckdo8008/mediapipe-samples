@@ -21,6 +21,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -39,6 +40,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.Navigation
 import com.google.mediapipe.examples.poselandmarker.PoseLandmarkerHelper
 import com.google.mediapipe.examples.poselandmarker.MainViewModel
+import com.google.mediapipe.examples.poselandmarker.OpenGLView
 import com.google.mediapipe.examples.poselandmarker.R
 import com.google.mediapipe.examples.poselandmarker.databinding.FragmentCameraBinding
 import com.google.mediapipe.tasks.vision.core.RunningMode
@@ -76,6 +78,8 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     private lateinit var backgroundExecutor: ExecutorService
     private var imageSendJob: Job? = null
     private var lastImageSent = false
+
+    private lateinit var openGLView: OpenGLView
 
     override fun onResume() {
         super.onResume()
@@ -178,6 +182,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             }
         }
 
+//        openGLView = fragmentCameraBinding.openglView
         // Attach listeners to UI control widgets
         initBottomSheetControls()
     }
@@ -321,6 +326,20 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     resultBundle.inputImageWidth,
                     RunningMode.LIVE_STREAM
                 )
+
+//                if (resultBundle.results.size > 0) {
+//                    if (resultBundle.results.first().landmarks().size > 0) {
+//                        val landmarks3D =
+//                            resultBundle.results.first().landmarks().first().map { landmark ->
+//                                floatArrayOf(
+//                                    landmark.x(),
+//                                    landmark.y(),
+//                                    landmark.z()
+//                                )
+//                            }
+//                        fragmentCameraBinding.openglView.updateLandmarks(landmarks3D)
+//                    }
+//                }
 
                 // Force a redraw
                 fragmentCameraBinding.overlay.invalidate()
