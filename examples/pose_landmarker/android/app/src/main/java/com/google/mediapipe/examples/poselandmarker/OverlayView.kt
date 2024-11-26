@@ -19,6 +19,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
@@ -28,6 +30,7 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 class OverlayView(context: Context?, attrs: AttributeSet?) :
     View(context, attrs) {
@@ -101,20 +104,42 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
+
+        val paintBlue = Paint().apply {
+            color = Color.BLUE
+            style = Paint.Style.FILL
+        }
+        val paintRed = Paint().apply {
+            color = Color.RED
+            style = Paint.Style.FILL
+        }
+
+        val radialGradient = RadialGradient(
+            2.5f,
+            2.5f,
+            2f,
+            intArrayOf(Color.TRANSPARENT, Color.RED),
+            null,
+            Shader.TileMode.MIRROR
+        )
+
+        val gradientPaint = Paint().apply {
+            isAntiAlias = true
+            shader = radialGradient
+        }
+
+
+        canvas.drawRect(0F, 0F, 100F, 200F, paintBlue)
         results?.let { poseLandmarkerResult ->
 //            poseLandmarkerResult.worldLandmarks()
             for(landmark in poseLandmarkerResult.landmarks()) {
                 // Draw the green rectangle
-
                 for(normalizedLandmark in landmark) {
                     canvas.drawPoint(
                         (132 + (normalizedLandmark.x() * imageWidth)) * scaleFactorResult,
                         normalizedLandmark.y() * imageHeight * scaleFactorResult,
                         pointPaint
                     )
-
-//                    println("idx : ${landmark.indexOf(normalizedLandmark)}, ${normalizedLandmark.toString()}")
-//                    println(normalizedLandmark)
                 }
 
                 PoseLandmarker.POSE_LANDMARKS.forEach {
@@ -125,11 +150,242 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                         poseLandmarkerResult.landmarks().get(0).get(it.end()).y() * imageHeight * scaleFactorResult,
                         linePaint)
                 }
+
+                val tmp = ArrayList<FloatArray>()
+                val nose = poseLandmarkerResult.landmarks().get(0).get(0)
+                if (nose.z() < 0) {
+                    val leftEye = poseLandmarkerResult.landmarks().get(0).get(2)
+                    val rightEye = poseLandmarkerResult.landmarks().get(0).get(5)
+
+                    val headCenter = if (leftEye != null && rightEye != null && nose != null) {
+                        val x = (leftEye.x() + rightEye.x() + nose.x()) / 3
+                        val y = (leftEye.y() + rightEye.y() + nose.y()) / 3
+                        val z = (leftEye.z() + rightEye.z() + nose.z()) / 3
+                        floatArrayOf(x, y, z)
+                    } else {
+                        null
+                    }
+
+                    val headDirection = if (headCenter != null) {
+                        floatArrayOf(
+                            headCenter[0] - nose.x(),
+                            headCenter[1] - nose.y(),
+                            headCenter[2] - nose.z()
+                        )
+                    } else {
+                        null
+                    }
+
+                    val occiputPosition = if (headDirection != null) {
+                        // 머리의 깊이 값을 추정하여 스케일링 (예: 머리 깊이의 절반)
+                        val headDepth = 0.1f // 머리의 깊이 (미터 단위, 필요시 조정)
+                        val scale = headDepth / sqrt(
+                            headDirection[0] * headDirection[0] +
+                                    headDirection[1] * headDirection[1] +
+                                    headDirection[2] * headDirection[2]
+                        )
+
+                        floatArrayOf(
+                            nose.x() + headDirection[0] * scale,
+                            nose.y() + headDirection[1] * scale
+                        )
+                    } else {
+                        null
+                    }
+
+                    if (occiputPosition != null) {
+                        tmp.add(occiputPosition)
+
+                        canvas.drawCircle(
+                            occiputPosition[0] * 100,
+                            occiputPosition[1] * 200,
+                            5f,
+                            gradientPaint)
+                    }
+
+                }
+
+                val leftS = poseLandmarkerResult.landmarks().get(0).get(11)
+                if (leftS.z() > 0) {
+                    tmp.add(floatArrayOf(leftS.x(), leftS.y()))
+                    canvas.drawCircle(
+                        leftS.x() * 100,
+                        leftS.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val rightS = poseLandmarkerResult.landmarks().get(0).get(12)
+                if (rightS.z() > 0) {
+                    tmp.add(floatArrayOf(rightS.x(), rightS.y()))
+                    canvas.drawCircle(
+                        rightS.x() * 100,
+                        rightS.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val leftH= poseLandmarkerResult.landmarks().get(0).get(23)
+                if (leftH.z() > 0) {
+                    tmp.add(floatArrayOf(leftH.x(), leftH.y()))
+                    canvas.drawCircle(
+                        leftH.x() * 100,
+                        leftH.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val rightH = poseLandmarkerResult.landmarks().get(0).get(24)
+                if (rightH.z() > 0) {
+                    tmp.add(floatArrayOf(rightH.x(), rightH.y()))
+                    canvas.drawCircle(
+                        rightH.x() * 100,
+                        rightH.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val leftHl= poseLandmarkerResult.landmarks().get(0).get(29)
+                if (leftHl.z() > 0) {
+                    tmp.add(floatArrayOf(leftHl.x(), leftHl.y()))
+                    canvas.drawCircle(
+                        leftHl.x() * 100,
+                        leftHl.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val rightHl = poseLandmarkerResult.landmarks().get(0).get(30)
+                if (rightHl.z() > 0) {
+                    tmp.add(floatArrayOf(rightHl.x(), rightHl.y()))
+                    canvas.drawCircle(
+                        rightHl.x() * 100,
+                        rightHl.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val leftk= poseLandmarkerResult.landmarks().get(0).get(25)
+                if (leftk.z() > 0) {
+                    tmp.add(floatArrayOf(leftk.x(), leftk.y()))
+                    canvas.drawCircle(
+                        leftk.x() * 100,
+                        leftk.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val rightk = poseLandmarkerResult.landmarks().get(0).get(26)
+                if (rightk.z() > 0) {
+                    tmp.add(floatArrayOf(rightk.x(), rightk.y()))
+                    canvas.drawCircle(
+                        rightk.x() * 100,
+                        rightk.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val lefte= poseLandmarkerResult.landmarks().get(0).get(13)
+                if (lefte.z() > 0) {
+                    tmp.add(floatArrayOf(lefte.x(), lefte.y()))
+                    canvas.drawCircle(
+                        lefte.x() * 100,
+                        lefte.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+                val righte = poseLandmarkerResult.landmarks().get(0).get(14)
+                if (righte.z() > 0) {
+                    tmp.add(floatArrayOf(righte.x(), righte.y()))
+                    canvas.drawCircle(
+                        righte.x() * 100,
+                        righte.y() * 200,
+                        5f,
+                        gradientPaint)
+                }
+
+                // 골반 중심 좌표 계산
+                val pelvisCenter = if (leftH != null && rightH != null) {
+                    val x = (leftH.x() + rightH.x()) / 2
+                    val y = (leftH.y() + rightH.y()) / 2
+                    val z = (leftH.z() + rightH.z()) / 2
+                    floatArrayOf(x, y, z)
+                } else {
+                    null
+                }
+
+                // 어깨 중심 좌표 계산
+                val shoulderCenter = if (leftS != null && rightS != null) {
+                    val x = (leftS.x() + rightS.x()) / 2
+                    val y = (leftS.y() + rightS.y()) / 2
+                    val z = (leftS.z() + rightS.z()) / 2
+                    floatArrayOf(x, y, z)
+                } else {
+                    null
+                }
+
+                // 척추 방향 벡터 계산 (어깨 중심 -> 골반 중심)
+                val spineDirection = if (pelvisCenter != null && shoulderCenter != null) {
+                    floatArrayOf(
+                        pelvisCenter[0] - shoulderCenter[0],
+                        pelvisCenter[1] - shoulderCenter[1],
+                        pelvisCenter[2] - shoulderCenter[2]
+                    )
+                } else {
+                    null
+                }
+
+                // 꼬리뼈 위치 계산
+                val tailbonePosition = if (spineDirection != null && pelvisCenter != null) {
+                    // 척추 방향 벡터를 따라 아래로 연장 (스케일링)
+                    val spineLength = sqrt(
+                        spineDirection[0] * spineDirection[0] +
+                                spineDirection[1] * spineDirection[1] +
+                                spineDirection[2] * spineDirection[2]
+                    )
+                    val scale = 0.02f // 골반에서 꼬리뼈까지의 상대적인 거리 (필요에 따라 조정)
+
+                    // 단위 벡터로 만들기
+                    val unitSpineDirection = floatArrayOf(
+                        spineDirection[0] / spineLength,
+                        spineDirection[1] / spineLength,
+                        spineDirection[2] / spineLength
+                    )
+
+                    // 꼬리뼈 위치 계산
+                    floatArrayOf(
+                        pelvisCenter[0] + unitSpineDirection[0] * scale,
+                        pelvisCenter[1] + unitSpineDirection[1] * scale,
+                        pelvisCenter[2] + unitSpineDirection[2] * scale
+                    )
+                } else {
+                    null
+                }
+
+                if (tailbonePosition != null) {
+                    tmp.add(floatArrayOf(tailbonePosition[0], tailbonePosition[1]))
+                    canvas.drawCircle(
+                        tailbonePosition[0] * 100,
+                        tailbonePosition[1] * 200,
+                        5f,
+                        gradientPaint)
+                }
+
+                // 2D로 표시
+                drawPressurePoints(canvas, tmp)
             }
         }
 //        canvas.drawRect(cropLeft.toFloat(), cropTop.toFloat(), cropRight.toFloat(), cropBottom.toFloat(), rectPaint)
         val trapezoidPath = createTrapezoidPath()
         canvas.drawPath(trapezoidPath, rectPaint)
+    }
+
+    fun drawPressurePoints(canvas: Canvas, points: List<FloatArray>) {
+        val paint = Paint().apply {
+            color = Color.RED
+            style = Paint.Style.FILL
+            alpha = 60
+        }
+
+        points.forEach { point ->
+            canvas.drawCircle(
+                (132 + (point[0] * imageWidth)) * scaleFactorResult,
+                point[1] * imageHeight * scaleFactorResult,
+                40f,
+                paint)
+        }
     }
 
     private var lastStateChangeTime: Long = 0L

@@ -26,10 +26,21 @@
         android:layout_height="match_parent"
         app:scaleType="fillCenter" />
 
+<!--    <io.github.sceneview.SceneView-->
+<!--        android:id="@+id/sceneView"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="match_parent" />-->
+
     <com.google.mediapipe.examples.poselandmarker.OverlayView
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+
+<!--    <fragment android:name="com.google.ar.sceneform.ux.ArFragment"-->
+<!--        android:id="@+id/ux_fragment"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="match_parent" />-->
 
 <!--    <com.google.mediapipe.examples.poselandmarker.OpenGLView-->
 <!--        android:id="@+id/opengl_view"-->

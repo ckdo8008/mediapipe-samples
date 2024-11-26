@@ -18,42 +18,44 @@ package com.google.mediapipe.examples.poselandmarker.fragment
 import android.annotation.SuppressLint
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.PixelFormat
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
-import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
 import android.widget.Toast
-import androidx.camera.core.Preview
+import androidx.camera.core.AspectRatio
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import androidx.camera.core.Camera
-import androidx.camera.core.AspectRatio
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
-import com.google.mediapipe.examples.poselandmarker.PoseLandmarkerHelper
 import com.google.mediapipe.examples.poselandmarker.MainViewModel
-import com.google.mediapipe.examples.poselandmarker.OpenGLView
+import com.google.mediapipe.examples.poselandmarker.PoseLandmarkerHelper
 import com.google.mediapipe.examples.poselandmarker.R
 import com.google.mediapipe.examples.poselandmarker.databinding.FragmentCameraBinding
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import java.util.Locale
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-
+import io.github.sceneview.collision.Vector3
+import io.github.sceneview.math.Position
+import io.github.sceneview.node.CylinderNode
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
 
 class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 
@@ -79,7 +81,9 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     private var imageSendJob: Job? = null
     private var lastImageSent = false
 
-    private lateinit var openGLView: OpenGLView
+//    private val landmarkNodes: ArrayList<CylinderNode> = ArrayList<CylinderNode>()
+
+//    private lateinit var openGLView: OpenGLView
 
     override fun onResume() {
         super.onResume()
@@ -182,8 +186,31 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             }
         }
 
-//        openGLView = fragmentCameraBinding.openglView
-        // Attach listeners to UI control widgets
+//        viewLifecycleOwner.lifecycleScope.launch {
+//            fragmentCameraBinding.sceneView.setZOrderOnTop(true)
+//            fragmentCameraBinding.sceneView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+//            fragmentCameraBinding.sceneView.holder.setFormat(PixelFormat.TRANSLUCENT)
+//            fragmentCameraBinding.sceneView.uiHelper.isOpaque = false
+//            fragmentCameraBinding.sceneView.view.blendMode = com.google.android.filament.View.BlendMode.TRANSLUCENT
+//            fragmentCameraBinding.sceneView.scene.skybox = null
+//
+//            val options = fragmentCameraBinding.sceneView.renderer.clearOptions
+//            options.clear = true
+//            fragmentCameraBinding.sceneView.renderer.clearOptions = options
+//
+//            fragmentCameraBinding.sceneView.cameraNode.apply {
+//                position = Position(z = 4.0f)
+//            }
+////            val modelFile = "MaterialSuite.glb"
+////            val modelInstance = fragmentCameraBinding.sceneView.modelLoader.createModelInstance(modelFile)
+//
+////            val modelNode = ModelNode(
+////                modelInstance = modelInstance,
+////                scaleToUnits = 2.0f,
+////            )
+////            modelNode.scale = Scale(0.15f)
+////            fragmentCameraBinding.sceneView.addChildNode(modelNode)
+//        }
         initBottomSheetControls()
     }
 
@@ -327,6 +354,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     RunningMode.LIVE_STREAM
                 )
 
+
 //                if (resultBundle.results.size > 0) {
 //                    if (resultBundle.results.first().landmarks().size > 0) {
 //                        val landmarks3D =
@@ -346,6 +374,29 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             }
         }
     }
+
+//    private fun displayLandmarks(landmarks: List<NormalizedLandmark>) {
+//        // 이전 노드 제거
+//        for (node in landmarkNodes) {
+//            fragmentCameraBinding.sceneView.addChildNode(node)
+////            fragmentCameraBinding.sceneView.getScene().removeChild(node)
+//        }
+//        landmarkNodes.clear()
+//
+//        // 새로운 랜드마크 노드 추가
+//        for (landmark in landmarks) {
+//            val position = Vector3(landmark.x(), landmark.y(), landmark.z())
+//
+//            fragmentCameraBinding.sceneView.
+//            val landmarkNode: CylinderNode =
+//                CylinderNode(sceneView.getTransformationSystem())
+//            landmarkNode.setParent(sceneView.getScene())
+//            landmarkNode.setRenderable(landmarkRenderable)
+//            landmarkNode.setLocalPosition(position)
+//
+//            landmarkNodes.add(landmarkNode)
+//        }
+//    }
 
     override fun onError(error: String, errorCode: Int) {
         activity?.runOnUiThread {
