@@ -19,6 +19,9 @@ import android.annotation.SuppressLint
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Point
+import android.media.MediaPlayer
+import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
@@ -38,12 +41,16 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
+import app.rive.runtime.kotlin.core.Direction
+import app.rive.runtime.kotlin.core.Loop
 import com.google.mediapipe.examples.poselandmarker.MainViewModel
 import com.google.mediapipe.examples.poselandmarker.PoseLandmarkerHelper
 import com.google.mediapipe.examples.poselandmarker.R
 import com.google.mediapipe.examples.poselandmarker.databinding.FragmentCameraBinding
+import com.google.mediapipe.tasks.components.containers.Landmark
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import io.github.sceneview.collision.Vector3
 import io.github.sceneview.math.Position
 import io.github.sceneview.node.CylinderNode
@@ -55,7 +62,47 @@ import java.net.URL
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
+import kotlin.math.sqrt
 
+fun isPointInsideTriangle(point: Point, triangle: List<Point>): Boolean {
+    if (triangle.size != 3) throw IllegalArgumentException("삼각형은 반드시 세 개의 꼭짓점을 가져야 합니다.")
+
+    val (a, b, c) = triangle
+
+    // 삼각형의 전체 면적
+    val areaABC = calculateTriangleArea(a, b, c)
+
+    // 점과 삼각형 꼭짓점들로 이루어진 세 개의 삼각형 면적
+    val areaPAB = calculateTriangleArea(point, a, b)
+    val areaPBC = calculateTriangleArea(point, b, c)
+    val areaPCA = calculateTriangleArea(point, c, a)
+
+    // 점이 삼각형 안에 있다면 세 면적의 합이 삼각형의 전체 면적과 같아야 함
+    return abs(areaABC - (areaPAB + areaPBC + areaPCA)) < 1e-6
+}
+
+fun calculateTriangleArea(p1: Point, p2: Point, p3: Point): Float {
+    return abs((p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y)) / 2f)
+}
+
+fun isPointInsideTrapezoid(
+    point: Point,
+    trapezoid: List<Point> // 네 개의 꼭짓점 (시계 방향 또는 반시계 방향)
+): Boolean {
+    if (trapezoid.size != 4) throw IllegalArgumentException("사다리꼴은 반드시 네 개의 꼭짓점을 가져야 합니다.")
+
+    val (a, b, c, d) = trapezoid
+
+    // 사다리꼴을 두 개의 삼각형으로 나눔
+    val triangle1 = listOf(a, b, c)
+    val triangle2 = listOf(b, c, d)
+
+    // 점이 두 삼각형 중 하나라도 포함되면 사다리꼴 안에 있음
+
+//    println ("triangle1 : ${isPointInsideTriangle(point, triangle1)}, ${isPointInsideTriangle(point, triangle2)}")
+    return isPointInsideTriangle(point, triangle1) || isPointInsideTriangle(point, triangle2)
+}
 
 class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 
@@ -81,9 +128,72 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     private var imageSendJob: Job? = null
     private var lastImageSent = false
 
+//    private lateinit var renderer: CubeRenderer
+
+    private var previousLandmarks: List<NormalizedLandmark>? = null
+//    private lateinit var smoothedLandmarks: MutableList<NormalizedLandmark>
+    private lateinit var smoothedLandmarks: MutableList<NormalizedLandmark>
+
+    // LPF 필터 계수 (0.0 ~ 1.0, 클수록 현재 데이터에 민감)
+    private val lpfAlpha = 0.7f
+    private val movementThreshold = 0.35f
+    private lateinit var mediaPlayer: MediaPlayer
+
 //    private val landmarkNodes: ArrayList<CylinderNode> = ArrayList<CylinderNode>()
 
 //    private lateinit var openGLView: OpenGLView
+    private val checkLandmark = arrayOf<Int>(7, 8, 11, 13, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32)
+    private val trapezoid = listOf(
+        Point(210 + 40, 0 + 40),
+        Point(430 - 40, 0 + 40),
+        Point(100 + 40, 480 - 40),
+        Point(540 - 40, 480 - 40)
+    )
+
+    // 저역통과 필터(LPF) 적용
+    private fun applyLPF(currentLandmarks: List<NormalizedLandmark>) {
+        for (i in currentLandmarks.indices) {
+            val current = currentLandmarks[i]
+            val smoothed = smoothedLandmarks[i]
+
+
+            // x, y, z에 각각 LPF 적용
+            smoothedLandmarks[i] = NormalizedLandmark.create(
+                lpfAlpha * current.x() + (1 - lpfAlpha) * smoothed.x(),
+                lpfAlpha * current.y() + (1 - lpfAlpha) * smoothed.y(),
+                lpfAlpha * current.z() + (1 - lpfAlpha) * smoothed.z(),
+                current.visibility(), // visibility는 그대로 유지,
+                current.presence()
+            )
+        }
+    }
+
+    // 갑작스러운 움직임 감지 함수
+    private fun detectSuddenMovement(filteredLandmarks: List<NormalizedLandmark>) {
+        previousLandmarks?.let { prevLandmarks ->
+            for (i in filteredLandmarks.indices) {
+                val dx = filteredLandmarks[i].x() - prevLandmarks[i].x()
+                val dy = filteredLandmarks[i].y() - prevLandmarks[i].y()
+                val dz = filteredLandmarks[i].z() - prevLandmarks[i].z()
+
+                // 변화량 계산
+                val distance = sqrt((dx * dx + dy * dy + dz * dz).toDouble()).toFloat()
+                if (distance > movementThreshold) {
+                    // 갑작스러운 움직임 감지 시
+                    activity?.runOnUiThread {
+                        // Toast 메시지 출력
+                        Toast.makeText(requireContext(),"위험합니다. 천천히 움직여 주세요.", Toast.LENGTH_SHORT).show()
+                        if (!mediaPlayer.isPlaying) {
+                            mediaPlayer.start()
+                        }
+                    }
+                    break
+                }
+            }
+        }
+        // 현재 랜드마크를 이전 랜드마크로 업데이트
+        previousLandmarks = filteredLandmarks.toList()
+    }
 
     override fun onResume() {
         super.onResume()
@@ -104,6 +214,16 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                 }
             }
         }
+
+        //"State Machine"
+        _fragmentCameraBinding?.riveAnimationView?.play(
+            "State Machine",
+            Loop.AUTO,
+            Direction.AUTO,
+            isStateMachine = true
+        )
+
+        _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", 50f)
     }
 
     override fun onPause() {
@@ -138,6 +258,13 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
         _fragmentCameraBinding =
             FragmentCameraBinding.inflate(inflater, container, false)
 
+        mediaPlayer = MediaPlayer.create(requireContext(), R.raw.slowmove)
+
+        val point = Point(346, 378)
+        println("point : $point")
+        println("trapezoid : $trapezoid")
+        isPointInsideTrapezoid(point, trapezoid)
+
         return fragmentCameraBinding.root
     }
 
@@ -153,6 +280,10 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             // Set up the camera and its use cases
             setUpCamera()
         }
+
+//        fragmentCameraBinding.glSurfaceView.setEGLContextClientVersion(2)
+//        fragmentCameraBinding.glSurfaceView.setRenderer(renderer)
+//        fragmentCameraBinding.glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY // 연속 렌더링
 
         poseLandmarkerHelper = PoseLandmarkerHelper(
             context = requireContext(),
@@ -186,31 +317,6 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             }
         }
 
-//        viewLifecycleOwner.lifecycleScope.launch {
-//            fragmentCameraBinding.sceneView.setZOrderOnTop(true)
-//            fragmentCameraBinding.sceneView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-//            fragmentCameraBinding.sceneView.holder.setFormat(PixelFormat.TRANSLUCENT)
-//            fragmentCameraBinding.sceneView.uiHelper.isOpaque = false
-//            fragmentCameraBinding.sceneView.view.blendMode = com.google.android.filament.View.BlendMode.TRANSLUCENT
-//            fragmentCameraBinding.sceneView.scene.skybox = null
-//
-//            val options = fragmentCameraBinding.sceneView.renderer.clearOptions
-//            options.clear = true
-//            fragmentCameraBinding.sceneView.renderer.clearOptions = options
-//
-//            fragmentCameraBinding.sceneView.cameraNode.apply {
-//                position = Position(z = 4.0f)
-//            }
-////            val modelFile = "MaterialSuite.glb"
-////            val modelInstance = fragmentCameraBinding.sceneView.modelLoader.createModelInstance(modelFile)
-//
-////            val modelNode = ModelNode(
-////                modelInstance = modelInstance,
-////                scaleToUnits = 2.0f,
-////            )
-////            modelNode.scale = Scale(0.15f)
-////            fragmentCameraBinding.sceneView.addChildNode(modelNode)
-//        }
         initBottomSheetControls()
     }
 
@@ -346,6 +452,30 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
         activity?.runOnUiThread {
             if (_fragmentCameraBinding != null) {
 
+                if (resultBundle.results.size > 0 && resultBundle.results.first().landmarks().size > 0) {
+                    if (!::smoothedLandmarks.isInitialized) {
+                        // 초기화 시 현재 랜드마크를 그대로 사용
+                        smoothedLandmarks = resultBundle.results.first().landmarks().first().toMutableList()
+                    }
+                    applyLPF(resultBundle.results.first().landmarks().first())
+                    detectSuddenMovement(smoothedLandmarks)
+
+//                    println("코 : ${resultBundle.results.first().landmarks().first()[0]} ${smoothedLandmarks[0]}")
+                    fragmentCameraBinding.overlay.resultsLandmark = smoothedLandmarks
+//                    println("코 X : ${smoothedLandmarks[0].x() * 640f}, 코 Y : ${smoothedLandmarks[0].y() * 480f} ")
+
+                    // 끼임 방지
+                    checkLandmark.forEach {
+                        val point = Point(
+                            (smoothedLandmarks[it].x() * 640f).toInt(),
+                            (smoothedLandmarks[it].y() * 480f).toInt())
+                        val chk = isPointInsideTrapezoid(
+                            point, trapezoid)
+
+                        if (!chk) println("$it : ${smoothedLandmarks[it]} $point")
+                    }
+                }
+
                 // Pass necessary information to OverlayView for drawing on the canvas
                 fragmentCameraBinding.overlay.setResults(
                     resultBundle.results.first(),
@@ -354,22 +484,11 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     RunningMode.LIVE_STREAM
                 )
 
-
-//                if (resultBundle.results.size > 0) {
-//                    if (resultBundle.results.first().landmarks().size > 0) {
-//                        val landmarks3D =
-//                            resultBundle.results.first().landmarks().first().map { landmark ->
-//                                floatArrayOf(
-//                                    landmark.x(),
-//                                    landmark.y(),
-//                                    landmark.z()
-//                                )
-//                            }
-//                        fragmentCameraBinding.openglView.updateLandmarks(landmarks3D)
-//                    }
-//                }
+//                println ("resultBundle.inputImageHeight : ${resultBundle.inputImageHeight}, resultBundle.inputImageWidth : ${resultBundle.inputImageWidth}")
 
                 // Force a redraw
+//                fragmentCameraBinding.glSurfaceView.requestRender()
+//                fragmentCameraBinding.glSurfaceView.invalidate()
                 fragmentCameraBinding.overlay.invalidate()
             }
         }

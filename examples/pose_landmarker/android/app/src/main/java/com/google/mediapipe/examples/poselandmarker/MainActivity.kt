@@ -21,6 +21,7 @@ import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
+import app.rive.runtime.kotlin.core.Rive
 import com.google.mediapipe.examples.poselandmarker.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OpenCVLoader.initLocal()
+        Rive.init(this)
 
         instance = this
         activityMainBinding = ActivityMainBinding.inflate(layoutInflater)

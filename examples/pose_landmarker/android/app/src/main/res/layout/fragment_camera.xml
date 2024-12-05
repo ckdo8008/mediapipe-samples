@@ -26,8 +26,16 @@
         android:layout_height="match_parent"
         app:scaleType="fillCenter" />
 
-<!--    <io.github.sceneview.SceneView-->
-<!--        android:id="@+id/sceneView"-->
+    <app.rive.runtime.kotlin.RiveAnimationView
+        android:id="@+id/riveAnimationView"
+        android:layout_marginTop="20dp"
+        android:layout_marginLeft="20dp"
+        android:layout_width="400dp"
+        android:layout_height="400dp"
+        app:riveResource="@raw/bodymap" />
+
+<!--    <android.opengl.GLSurfaceView-->
+<!--        android:id="@+id/gl_surface_view"-->
 <!--        android:layout_width="match_parent"-->
 <!--        android:layout_height="match_parent" />-->
 
@@ -37,17 +45,5 @@
         android:layout_height="match_parent" />
 
 
-<!--    <fragment android:name="com.google.ar.sceneform.ux.ArFragment"-->
-<!--        android:id="@+id/ux_fragment"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="match_parent" />-->
 
-<!--    <com.google.mediapipe.examples.poselandmarker.OpenGLView-->
-<!--        android:id="@+id/opengl_view"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="match_parent"/>-->
-
-<!--    <include-->
-<!--        android:id="@+id/bottom_sheet_layout"-->
-<!--        layout="@layout/info_bottom_sheet" />-->
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -207,81 +207,6 @@ class PoseLandmarkerHelper(
         return bitmap
     }
 
-
-//    // Convert the ImageProxy to MP Image and feed it to PoselandmakerHelper.
-//    fun detectLiveStream(
-//        imageProxy: ImageProxy,
-//        isFrontCamera: Boolean
-//    ) {
-//        if (runningMode != RunningMode.LIVE_STREAM) {
-//            throw IllegalArgumentException(
-//                "Attempting to call detectLiveStream" +
-//                        " while not using RunningMode.LIVE_STREAM"
-//            )
-//        }
-//        val frameTime = SystemClock.uptimeMillis()
-//
-////        // Copy out RGB bits from the frame to a bitmap buffer
-////        val bitmapBuffer =
-////            Bitmap.createBitmap(
-////                imageProxy.width,
-////                imageProxy.height,
-////                Bitmap.Config.ARGB_8888
-////            )
-////
-////        imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
-//        val bitmapBuffer = copyImageToBitmap(imageProxy)
-//        imageProxy.close()
-//
-//        val matrix = Matrix().apply {
-//            // Rotate the frame received from the camera to be in the same direction as it'll be shown
-//            postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-//
-//            // flip image if user use front camera
-//            if (isFrontCamera) {
-//                postScale(
-//                    -1f,
-//                    1f,
-//                    imageProxy.width.toFloat(),
-//                    imageProxy.height.toFloat()
-//                )
-//            }
-//        }
-//        val rotatedBitmap = Bitmap.createBitmap(
-//            bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height,
-//            matrix, true
-//        )
-//
-//
-////        val cropWidth = 160f
-////        val cropWidthBottom = 320f
-////        val cropHeight = 270f
-////
-////        val topLeftX = (imageProxy.width.toFloat() - cropWidth) / 2f
-////        val topLeftY = 70f
-////        val topRightX = topLeftX + cropWidth
-////        val topRightY = topLeftY
-////        val bottomLeftX = (imageProxy.width.toFloat() - cropWidthBottom) / 2f
-////        val bottomLeftY = topLeftY + cropHeight
-////        val bottomRightX = bottomLeftX + cropWidthBottom
-////        val bottomRightY = bottomLeftY
-////
-////        // Iterate over all pixels and set pixels outside the trapezoid to black
-////        for (x in 0 until rotatedBitmap.width) {
-////            for (y in 0 until rotatedBitmap.height) {
-////                if (!isPointInTrapezoid(x.toFloat(), y.toFloat(), topLeftX, topLeftY, topRightX, topRightY, bottomLeftX, bottomLeftY, bottomRightX, bottomRightY)) {
-////                    // Set pixel to black if outside the defined trapezoid area
-////                    rotatedBitmap.setPixel(x, y, Color.BLACK)
-////                }
-////            }
-////        }
-//
-//        // Convert the modified Bitmap object to an MPImage object to run inference
-//        val mpImage = BitmapImageBuilder(rotatedBitmap).build()
-//
-//        detectAsync(mpImage, frameTime)
-//    }
-
     fun detectLiveStream(
         imageProxy: ImageProxy,
         isFrontCamera: Boolean
@@ -334,10 +259,12 @@ class PoseLandmarkerHelper(
         val width = cropRight - cropLeft
         val cropWidth = (220f / 640f) * width
         val cropWidthBottom = (440f / 640f) * width
-        val cropHeight = imageProxy.height - (70f / 360f) * imageProxy.height
+//        val cropHeight = imageProxy.height - (70f / 360f) * imageProxy.height
+        val cropHeight = imageProxy.height
 
         val topLeftX = (width.toFloat() - cropWidth) / 2f
-        val topLeftY = (70f / 360f) * imageProxy.height
+//        val topLeftY = (70f / 360f) * imageProxy.height
+        val topLeftY = 0f
         val topRightX = topLeftX + cropWidth
         val topRightY = topLeftY
         val bottomLeftX = (width.toFloat() - cropWidthBottom) / 2f
