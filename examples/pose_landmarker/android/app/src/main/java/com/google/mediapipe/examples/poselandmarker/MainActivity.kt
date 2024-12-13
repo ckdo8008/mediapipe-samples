@@ -111,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         withContext(Dispatchers.IO) {
+            var isNotCall = false
             try {
                 val connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
@@ -126,11 +127,14 @@ class MainActivity : AppCompatActivity() {
                 println("Response Code: $responseCode")
             } catch (e: Exception) {
                 println("Error calling Lambda: $e")
+                isNotCall = true
             }
 
-            if (getStatus() != status) {
-                println("Fail data : ${getStatus()}")
-                callLambdaFunction(status)
+            if (!isNotCall) {
+                if (getStatus() != status) {
+                    println("Fail data : ${getStatus()}")
+                    callLambdaFunction(status)
+                }
             }
         }
     }

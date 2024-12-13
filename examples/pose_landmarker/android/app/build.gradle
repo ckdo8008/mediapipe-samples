@@ -32,8 +32,8 @@ android {
 
     defaultConfig {
         applicationId "com.google.mediapipe.examples.poselandmarker"
-        minSdk 24
-        targetSdk 34
+        minSdk 30
+        targetSdk 35
         versionCode 1
         versionName "1.0"
 
@@ -65,6 +65,10 @@ android {
     packagingOptions {
         pickFirst '**/*.so'
     }
+
+    aaptOptions {
+        noCompress "tflite", "task"
+    }
 }
 
 // import DownloadMPTasks task
@@ -81,6 +85,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.fragment:fragment-ktx:1.8.5'
+    implementation 'com.google.mlkit:pose-detection-common:17.0.0'
 
     // Navigation library
     def nav_version = "2.8.4"
@@ -111,7 +116,8 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
 
     // MediaPipe Library
-    implementation 'com.google.mediapipe:tasks-vision:latest.release'
+    implementation 'com.google.mediapipe:tasks-vision:0.20230731'
+//    implementation 'com.google.mediapipe:tasks-vision:latest.release'
 //    implementation 'com.google.ar.sceneform.ux:sceneform-ux:1.17.1'
 //    implementation 'com.google.ar:core:1.46.0'
 //
@@ -122,4 +128,5 @@ dependencies {
     implementation project(":opencv")
 
     implementation 'app.rive:rive-android:9.12.0'
+    implementation 'io.github.shashank02051997:FancyToast:2.0.1'
 }

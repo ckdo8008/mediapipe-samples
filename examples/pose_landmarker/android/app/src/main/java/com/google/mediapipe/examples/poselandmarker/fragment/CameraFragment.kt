@@ -22,13 +22,17 @@ import android.graphics.PixelFormat
 import android.graphics.Point
 import android.media.MediaPlayer
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -51,6 +55,8 @@ import com.google.mediapipe.tasks.components.containers.Landmark
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
+import com.google.mlkit.vision.pose.PoseLandmark
+import com.shashank.sony.fancytoastlib.FancyToast
 import io.github.sceneview.collision.Vector3
 import io.github.sceneview.math.Position
 import io.github.sceneview.node.CylinderNode
@@ -142,6 +148,29 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 //    private val landmarkNodes: ArrayList<CylinderNode> = ArrayList<CylinderNode>()
 
 //    private lateinit var openGLView: OpenGLView
+    private val landmarks = arrayOf(
+        "brow", "chin", "left_ear", "right_ear", "left_shoulder", "right_shoulder",
+        "sternum", "rib", "left_knee", "right_knee", "left_ilium", "right_ilium",
+        "left_elbow", "right_elbow", "left_calf", "right_calf", "left_anklebone",
+        "right_anklebone", "left_in_anklebone", "right_in_anklebone", "occipital",
+        "left_scapula", "right_scapula", "left_ancon", "right_ancon", "sacrum",
+        "left_heel", "right_heel", "left_hip", "right_hip"
+    )
+    val damageMap = mutableMapOf<String, Int>()
+
+//    fun updateDamage(zValues: FloatArray, damageMap: MutableMap<String, Int>) {
+//        for ((index, z) in zValues.withIndex()) {
+//            val landmark = landmarks[index]
+//            if (z >= 0) {
+//                // z값이 양수면 데미지 누적
+//                damageMap[landmark] = (damageMap[landmark]?.plus(10) ?: 10).coerceAtMost(255)
+//            } else {
+//                // z값이 음수면 데미지 차감 (최소 0 이하로 내려가지 않게)
+//                damageMap[landmark] = (damageMap[landmark]?.minus(5) ?: 0).coerceAtLeast(0)
+//            }
+//        }
+//    }
+
     private val checkLandmark = arrayOf<Int>(7, 8, 11, 13, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32)
     private val trapezoid = listOf(
         Point(210 + 40, 0 + 40),
@@ -149,6 +178,31 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
         Point(100 + 40, 480 - 40),
         Point(540 - 40, 480 - 40)
     )
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var lastResultTime = System.currentTimeMillis()
+    private val damageReductionInterval = 5 * 1000L
+    private val stepup = 2;
+    private val stepdown = 1;
+
+    private fun reduceDamageOverTime() {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                println("reduceDamageOverTime run")
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastResultTime >= damageReductionInterval) {
+                    // 데미지 감소 로직
+                    for (key in damageMap.keys) {
+                        damageMap[key] = (damageMap[key]?.minus(200) ?: 0).coerceAtLeast(0)
+                        val value = damageMap[key] ?: 0
+                        _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", key, value.toFloat() / 10f)
+                    }
+                    println("데미지 감소 적용: $damageMap")
+                }
+                handler.postDelayed(this, damageReductionInterval)
+            }
+        }, damageReductionInterval)
+    }
 
     // 저역통과 필터(LPF) 적용
     private fun applyLPF(currentLandmarks: List<NormalizedLandmark>) {
@@ -182,7 +236,15 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     // 갑작스러운 움직임 감지 시
                     activity?.runOnUiThread {
                         // Toast 메시지 출력
-                        Toast.makeText(requireContext(),"위험합니다. 천천히 움직여 주세요.", Toast.LENGTH_SHORT).show()
+
+//                        Toast.makeText(requireContext(),"위험합니다. 천천히 움직여 주세요.", Toast.LENGTH_SHORT).show()
+                        FancyToast.makeText(
+                            requireContext(),
+                            "위험합니다. 천천히 움직여 주세요.",
+                            FancyToast.LENGTH_SHORT,
+                            FancyToast.WARNING,
+                            false).show()
+
                         if (!mediaPlayer.isPlaying) {
                             mediaPlayer.start()
                         }
@@ -223,7 +285,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             isStateMachine = true
         )
 
-        _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", 50f)
+//        _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", 50f)
     }
 
     override fun onPause() {
@@ -259,6 +321,8 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             FragmentCameraBinding.inflate(inflater, container, false)
 
         mediaPlayer = MediaPlayer.create(requireContext(), R.raw.slowmove)
+        landmarks.forEach { damageMap[it] = 0 }
+        reduceDamageOverTime()
 
         val point = Point(346, 378)
         println("point : $point")
@@ -443,39 +507,380 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
             fragmentCameraBinding.viewFinder.display.rotation
     }
 
+    fun normalizeZ(z: Float, minZ: Float, maxZ: Float): Float {
+        return ((maxZ - z) / (maxZ - minZ)) * 100f
+    }
+
     // Update UI after pose have been detected. Extracts original
     // image height/width to scale and place the landmarks properly through
     // OverlayView
     override fun onResults(
         resultBundle: PoseLandmarkerHelper.ResultBundle
     ) {
-        activity?.runOnUiThread {
-            if (_fragmentCameraBinding != null) {
+        if (_fragmentCameraBinding != null) {
+            if (resultBundle.results.size > 0 && resultBundle.results.first().landmarks().size > 0) {
+                lastResultTime = System.currentTimeMillis()
 
-                if (resultBundle.results.size > 0 && resultBundle.results.first().landmarks().size > 0) {
-                    if (!::smoothedLandmarks.isInitialized) {
-                        // 초기화 시 현재 랜드마크를 그대로 사용
-                        smoothedLandmarks = resultBundle.results.first().landmarks().first().toMutableList()
-                    }
-                    applyLPF(resultBundle.results.first().landmarks().first())
-                    detectSuddenMovement(smoothedLandmarks)
+                if (!::smoothedLandmarks.isInitialized) {
+                    // 초기화 시 현재 랜드마크를 그대로 사용
+                    smoothedLandmarks = resultBundle.results.first().landmarks().first().toMutableList()
+                }
+                applyLPF(resultBundle.results.first().landmarks().first())
+                detectSuddenMovement(smoothedLandmarks)
 
-//                    println("코 : ${resultBundle.results.first().landmarks().first()[0]} ${smoothedLandmarks[0]}")
-                    fragmentCameraBinding.overlay.resultsLandmark = smoothedLandmarks
-//                    println("코 X : ${smoothedLandmarks[0].x() * 640f}, 코 Y : ${smoothedLandmarks[0].y() * 480f} ")
+                fragmentCameraBinding.overlay.resultsLandmark = smoothedLandmarks
 
-                    // 끼임 방지
-                    checkLandmark.forEach {
-                        val point = Point(
-                            (smoothedLandmarks[it].x() * 640f).toInt(),
-                            (smoothedLandmarks[it].y() * 480f).toInt())
-                        val chk = isPointInsideTrapezoid(
-                            point, trapezoid)
+                // 끼임 방지
+//                checkLandmark.forEach {
+//                    val point = Point(
+//                        (smoothedLandmarks[it].x() * 640f).toInt(),
+//                        (smoothedLandmarks[it].y() * 480f).toInt())
+//                    val chk = isPointInsideTrapezoid(
+//                        point, trapezoid)
+//
+//                    if (!chk) println("끼임 : $it : ${smoothedLandmarks[it]} $point")
+//                }
 
-                        if (!chk) println("$it : ${smoothedLandmarks[it]} $point")
-                    }
+                val marks = resultBundle.results.first().landmarks().first().toMutableList()
+                val nose = marks[0]
+                val leftHip = marks[23]
+                val rightHip = marks[24]
+                
+                val baseline = (leftHip.y() + rightHip.y()) / 2f
+                if (nose.y() > baseline) {
+                    println("정상")
+                } else {
+                    println("역방향")
+                }
+                
+
+                // 눈썹
+                val leftEyebrow = marks[1]
+                val rightEyebrow = marks[4]
+                val foreheadZ = (leftEyebrow.z() + rightEyebrow.z()) / 2
+                if (foreheadZ >= 0) {
+                    damageMap["brow"] = (damageMap["brow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["brow"] = (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
                 }
 
+                val brow = damageMap["brow"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", brow / 10f)
+
+                // 턱
+                val leftEar = marks[7]
+                val rightEar = marks[8]
+                val chinZ = (nose.z() + leftEar.z() + rightEar.z()) / 3
+                if (chinZ >= 0) {
+                    damageMap["chin"] = (damageMap["chin"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["chin"] = (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+
+                val chin = damageMap["chin"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "chin", chin / 10f)
+
+                // 왼쪽 귀
+                if (leftEar.z() >= 0) {
+                    damageMap["left_ear"] = (damageMap["left_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_ear"] = (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_ear = damageMap["left_ear"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ear", left_ear / 10f)
+
+                // 오른쪽 귀
+                if (rightEar.z() >= 0) {
+                    damageMap["right_ear"] = (damageMap["right_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_ear"] = (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_ear = damageMap["right_ear"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ear", right_ear / 10f)
+
+//                11 - left shoulder
+//                12 - right shoulder
+
+                // 왼쪽 어깨
+                val leftshoulder = marks[11]
+                if (leftshoulder.z() >= 0) {
+                    damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+
+                val left_shoulder = damageMap["left_shoulder"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_shoulder", left_shoulder / 10f)
+
+                // 오른쪽 어깨
+                val rightshoulder = marks[12]
+                if (rightshoulder.z() >= 0) {
+                    damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+
+                val right_shoulder = damageMap["right_shoulder"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_shoulder", right_shoulder / 10f)
+
+                // 흉골
+
+                val shoulderCenterZ = (leftshoulder.z() + rightshoulder.z()) / 2
+                val hipCenterZ = (leftHip.z() + rightHip.z()) / 2
+                val sternumZ = (shoulderCenterZ + hipCenterZ) / 2
+                if (sternumZ >= 0) {
+                    damageMap["sternum"] = (damageMap["sternum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["sternum"] = (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val sternum = damageMap["sternum"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "sternum", sternum / 10f)
+
+                // 갈비뼈
+                val ribZ = shoulderCenterZ + (hipCenterZ - shoulderCenterZ) * 0.33f
+                if (ribZ >= 0) {
+                    damageMap["rib"] = (damageMap["rib"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val rib = damageMap["rib"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "rib", rib / 10f)
+
+                // 왼쪽 무릎
+                val leftknee = marks[25]
+                if (leftknee.z() >= 0) {
+                    damageMap["left_knee"] = (damageMap["left_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_knee"] = (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_knee = damageMap["left_knee"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_knee", left_knee / 10f)
+
+                // 오른쪽 무릎
+                val rightknee = marks[26]
+                if (rightknee.z() >= 0) {
+                    damageMap["right_knee"] = (damageMap["right_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_knee"] = (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_knee = damageMap["right_knee"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_knee", right_knee / 10f)
+
+                // 왼쪽 장골
+                if (leftHip.z() >= 0) {
+                    damageMap["left_ilium"] = (damageMap["left_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_ilium = damageMap["left_ilium"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ilium", left_ilium / 10f)
+
+                // 오른쪽 장골
+                if (rightHip.z() >= 0) {
+                    damageMap["right_ilium"] = (damageMap["right_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_ilium = damageMap["right_ilium"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ilium", right_ilium / 10f)
+
+                val leftelbow = marks[13]
+                val rightelbow = marks[14]
+
+                // 왼쪽 팔꿈치
+                if (leftelbow.z() >= 0 && rightelbow.z() <= 0) {
+                    damageMap["left_elbow"] = (damageMap["left_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_elbow"] = (damageMap["left_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                }
+                val left_elbow = damageMap["left_elbow"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_elbow", left_elbow / 10f)
+
+                // 오른쪽 팔꿈치
+                if (rightelbow.z() >= 0 && leftelbow.z() <= 0) {
+                    damageMap["right_elbow"] = (damageMap["right_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_elbow"] = (damageMap["right_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                }
+                val right_elbow = damageMap["right_elbow"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_elbow", right_elbow / 10f)
+
+                // 왼쪽 종아리
+                // 왼쪽 바깥쪽 발목뼈
+                if (leftknee.z() >= 0 && rightknee.z() <= 0) {
+                    damageMap["left_calf"] = (damageMap["left_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_calf"] = (damageMap["left_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                }
+                val left_calf = damageMap["left_calf"]?.toFloat()  ?: 0f
+                val left_anklebone = damageMap["left_anklebone"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_calf", left_calf / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_anklebone", left_anklebone / 10f)
+
+                // 오른쪽 종아리
+                // 오른쪽 바깥쪽 발목뼈
+                if (rightknee.z() >= 0 && leftknee.z() <= 0) {
+                    damageMap["right_calf"] = (damageMap["right_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_calf"] = (damageMap["right_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                }
+                val right_calf = damageMap["right_calf"]?.toFloat()  ?: 0f
+                val right_anklebone = damageMap["right_anklebone"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_calf", right_calf / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_anklebone", right_anklebone / 10f)
+
+
+                val leftankle = marks[27]
+                val rightankle = marks[28]
+                //왼쪽 안쪽 발목뼈
+                if (leftankle.z() >= 0 && leftHip.z() <= 0) {
+                    damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_in_anklebone = damageMap["left_in_anklebone"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_in_anklebone", left_in_anklebone / 10f)
+
+                //오른쪽 안쪽 발목뼈
+                if (rightankle.z() >= 0 && rightHip.z() <= 0) {
+                    damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_in_anklebone = damageMap["right_in_anklebone"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_in_anklebone", right_in_anklebone / 10f)
+
+                // 후두골
+                val earCenterZ = (leftEar.z() + rightEar.z()) / 2
+                val occipitalZ = earCenterZ - (nose.z() - earCenterZ)
+                if (occipitalZ >= 0) {
+                    damageMap["occipital"] = (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val occipital = damageMap["occipital"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "occipital", occipital / 10f)
+
+                //왼쪽 견갑골
+                if (leftshoulder.z() >= 0 && rightshoulder.z() >= 0) {
+                    damageMap["left_scapula"] = (damageMap["left_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_scapula"] = (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_scapula = damageMap["left_scapula"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_scapula", left_scapula / 10f)
+
+                // 오른쪽 견갑골
+                if (rightshoulder.z() >= 0 && leftshoulder.z() >= 0) {
+                    damageMap["right_scapula"] = (damageMap["right_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_scapula"] = (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_scapula = damageMap["right_scapula"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_scapula", right_scapula / 10f)
+
+                // 왼쪽 앙콘
+                // 오른쪽 앙콘
+                if (leftelbow.z() >= 0 && rightelbow.z() >= 0) {
+                    damageMap["left_ancon"] = (damageMap["left_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    damageMap["right_ancon"] = (damageMap["right_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_ancon = damageMap["left_ancon"]?.toFloat()  ?: 0f
+                val right_ancon = damageMap["right_ancon"]?.toFloat()  ?: 0f
+
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ancon", left_ancon / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ancon", right_ancon / 10f)
+
+                // 천골
+                // 왼쪽 힙
+                // 오른쪽 힙
+                if (hipCenterZ >= 0) {
+                    damageMap["sacrum"] = (damageMap["sacrum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    if (leftHip.z() >= 0) {
+                        damageMap["left_hip"] = (damageMap["left_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        if (rightHip.z() <= 0) {
+                            damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        } else {
+                            damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        }
+                    } else {
+                        damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        if (rightHip.z() >= 0) {
+                            damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        } else {
+                            damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+                    }
+                } else {
+                    damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val sacrum = damageMap["sacrum"]?.toFloat()  ?: 0f
+                val left_hip = damageMap["left_hip"]?.toFloat()  ?: 0f
+                val right_hip = damageMap["right_hip"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "sacrum", sacrum / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_hip", left_hip / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_hip", right_hip / 10f)
+
+
+                val leftheel = marks[29]
+                val rightheel = marks[30]
+                // 왼쪽 발꿈치
+                if (leftheel.z() >= 0) {
+                    damageMap["left_heel"] = (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val left_heel = damageMap["left_heel"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_heel", left_heel / 10f)
+
+                // 오른쪽 발꿈치
+                if (rightheel.z() >= 0) {
+                    damageMap["right_heel"] = (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                } else {
+                    damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                }
+                val right_heel = damageMap["right_heel"]?.toFloat()  ?: 0f
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_heel", right_heel / 10f)
+
+
+
+                // 히트맵
+// 코 (인덱스 0), 왼쪽 엉덩이 (인덱스 23), 왼쪽 어깨 (인덱스 11)의 z좌표
+//                val noseZ = worldLandmarks[0].z()
+//                val leftHipZ = worldLandmarks[23].z()
+//                val leftShoulderZ = worldLandmarks[11].z()
+
+//                println ("noseZ : $noseZ, leftHipZ: $leftHipZ, leftShoulderZ: $leftShoulderZ")
+
+//// 상체와 하체의 z좌표 차이 계산
+//                val bodyZDiff = abs(noseZ - leftHipZ)
+//                val upperBodyZDiff = abs(leftShoulderZ - leftHipZ)
+//
+//// 임계값 설정
+//                val zThreshold = 0.1f
+//
+//                if (bodyZDiff < zThreshold) {
+//                    println("누워있는 상태입니다.")
+//                } else if (upperBodyZDiff > zThreshold) {
+//                    println("앉아있는 상태입니다.")
+//                } else {
+//                    println("기타 자세입니다.")
+//                }
+//                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", foreheadDistance)
+            }
+        }
+
+        if (_fragmentCameraBinding != null) {
+            activity?.runOnUiThread {
                 // Pass necessary information to OverlayView for drawing on the canvas
                 fragmentCameraBinding.overlay.setResults(
                     resultBundle.results.first(),
@@ -484,11 +889,6 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     RunningMode.LIVE_STREAM
                 )
 
-//                println ("resultBundle.inputImageHeight : ${resultBundle.inputImageHeight}, resultBundle.inputImageWidth : ${resultBundle.inputImageWidth}")
-
-                // Force a redraw
-//                fragmentCameraBinding.glSurfaceView.requestRender()
-//                fragmentCameraBinding.glSurfaceView.invalidate()
                 fragmentCameraBinding.overlay.invalidate()
             }
         }

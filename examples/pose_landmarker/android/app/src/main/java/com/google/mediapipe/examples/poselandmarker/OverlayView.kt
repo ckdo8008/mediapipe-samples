@@ -78,6 +78,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         pointPaint.style = Paint.Style.FILL
 
         pointLPFPaint.color = Color.RED
+
         pointLPFPaint.strokeWidth = LANDMARK_STROKE_WIDTH
         pointLPFPaint.style = Paint.Style.FILL
 
@@ -146,6 +147,21 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         return path
     }
 
+    val minZ = -0.3f  // 카메라에 매우 가까울 때
+    val maxZ = 0.3f   // 카메라로부터 멀 때
+
+    // 한 랜드마크의 z값이 있을 때
+    fun getAlphaFromZ(z: Float): Int {
+        // z값을 0~1 범위로 정규화: (z - minZ) / (maxZ - minZ)
+        val normalized = (z - minZ) / (maxZ - minZ)
+        // normalized를 0~1 사이 값으로 클램핑
+        val clamped = normalized.coerceIn(0f, 1f)
+        // 알파값은 255에서 시작해서 z가 멀어질수록 투명해진다고 가정
+        // 가까울수록 불투명 -> z가 minZ일 때 알파=255, maxZ일 때 알파=0
+        val alpha = (clamped * 255).toInt()
+        return alpha
+    }
+
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
 
@@ -198,7 +214,10 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
                     }
                 }
                 resultsLandmark?.let {
+//                    var idx = 0
                     for(n in it) {
+//                        println("it.indexOf(n) :  ${idx++}   =========== z: ${n.z()}")
+//                        pointLPFPaint.alpha = getAlphaFromZ(n.z())
                         canvas.drawPoint(
                             (132 + (n.x() * imageWidth)) * scaleFactorResult,
                             n.y() * imageHeight * scaleFactorResult,
