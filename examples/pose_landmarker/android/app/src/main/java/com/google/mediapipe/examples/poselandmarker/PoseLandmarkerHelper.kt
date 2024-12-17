@@ -37,8 +37,10 @@ class PoseLandmarkerHelper(
     var minPoseDetectionConfidence: Float = DEFAULT_POSE_DETECTION_CONFIDENCE,
     var minPoseTrackingConfidence: Float = DEFAULT_POSE_TRACKING_CONFIDENCE,
     var minPosePresenceConfidence: Float = DEFAULT_POSE_PRESENCE_CONFIDENCE,
-    var currentModel: Int = MODEL_POSE_LANDMARKER_FULL,
+//    var currentModel: Int = MODEL_POSE_LANDMARKER_FULL,
     var currentDelegate: Int = DELEGATE_GPU,
+    var currentModel: Int = MODEL_POSE_LANDMARKER_LITE,
+//    var currentDelegate: Int = DELEGATE_GPU,
     var runningMode: RunningMode = RunningMode.LIVE_STREAM,
     val context: Context,
     // this listener is only used when running in RunningMode.LIVE_STREAM

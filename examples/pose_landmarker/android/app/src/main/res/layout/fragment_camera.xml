@@ -24,7 +24,9 @@
         android:id="@+id/view_finder"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:scaleType="fillCenter" />
+        app:scaleType="fillCenter" >
+
+    </androidx.camera.view.PreviewView>
 
     <app.rive.runtime.kotlin.RiveAnimationView
         android:id="@+id/riveAnimationView"
@@ -43,7 +45,14 @@
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_gravity="end|top"
+        android:textColor="#ff0000"
+        android:textSize="20sp"
+        android:textFontWeight="600"
+        android:layout_width="500dp"
+        android:layout_height="400dp" />
 
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

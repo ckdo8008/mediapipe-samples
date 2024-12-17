@@ -69,6 +69,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.sqrt
 
 fun isPointInsideTriangle(point: Point, triangle: List<Point>): Boolean {
@@ -108,6 +109,38 @@ fun isPointInsideTrapezoid(
 
 //    println ("triangle1 : ${isPointInsideTriangle(point, triangle1)}, ${isPointInsideTriangle(point, triangle2)}")
     return isPointInsideTriangle(point, triangle1) || isPointInsideTriangle(point, triangle2)
+}
+
+data class Lmark(val x: Float, val y: Float, val z: Float)
+
+fun computeSpeed(
+    prevLandmarks: List<Lmark>,
+    currentLandmarks: List<Lmark>,
+    deltaTimeSec: Float
+): Map<String, Float> {
+    val LEFT_SHOULDER = 11
+    val RIGHT_SHOULDER = 12
+    val LEFT_HIP = 23
+    val RIGHT_HIP = 24
+    val LEFT_ANKLE = 27
+    val RIGHT_ANKLE = 28
+
+    fun speedForLandmark(index: Int): Float {
+        val dx = currentLandmarks[index].x - prevLandmarks[index].x
+        val dy = currentLandmarks[index].y - prevLandmarks[index].y
+        val dz = currentLandmarks[index].z - prevLandmarks[index].z
+        val distance = kotlin.math.sqrt(dx*dx + dy*dy + dz*dz)
+        return distance / deltaTimeSec
+    }
+
+    return mapOf(
+        "leftShoulderSpeed" to speedForLandmark(LEFT_SHOULDER),
+        "rightShoulderSpeed" to speedForLandmark(RIGHT_SHOULDER),
+        "leftHipSpeed" to speedForLandmark(LEFT_HIP),
+        "rightHipSpeed" to speedForLandmark(RIGHT_HIP),
+        "leftAnkleSpeed" to speedForLandmark(LEFT_ANKLE),
+        "rightAnkleSpeed" to speedForLandmark(RIGHT_ANKLE)
+    )
 }
 
 class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
@@ -185,6 +218,8 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     private val stepup = 2;
     private val stepdown = 1;
 
+    private var prevLandmarks: List<Lmark>? = null
+
     private fun reduceDamageOverTime() {
         handler.postDelayed(object : Runnable {
             override fun run() {
@@ -219,6 +254,34 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                 current.visibility(), // visibility는 그대로 유지,
                 current.presence()
             )
+        }
+    }
+
+    private fun detectFastMovement(
+        prevLandmarks: List<Lmark>,
+        currentLandmarks: List<Lmark>,
+        deltaTimeSec: Float,
+        threshold: Float = 0.1f
+    ) {
+        val speeds = computeSpeed(prevLandmarks, currentLandmarks, deltaTimeSec)
+        val fastMovements = speeds.filter { it.value > threshold }
+        if (fastMovements.isNotEmpty()) {
+            println("빠른 움직임 감지: ${fastMovements.keys} (속도: ${fastMovements.values})")
+            activity?.runOnUiThread {
+                // Toast 메시지 출력
+
+//                        Toast.makeText(requireContext(),"위험합니다. 천천히 움직여 주세요.", Toast.LENGTH_SHORT).show()
+                FancyToast.makeText(
+                    requireContext(),
+                    "위험합니다. 천천히 움직여 주세요.",
+                    FancyToast.LENGTH_SHORT,
+                    FancyToast.WARNING,
+                    false).show()
+
+                if (!mediaPlayer.isPlaying) {
+                    mediaPlayer.start()
+                }
+            }
         }
     }
 
@@ -511,6 +574,16 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
         return ((maxZ - z) / (maxZ - minZ)) * 100f
     }
 
+    fun getXYZ(arg: Landmark): String {
+        return "${floor(arg.x() * 1000) / 1000}|${floor(arg.y() * 1000) / 1000}|${floor(arg.z() * 1000) / 1000} "
+    }
+
+    fun getXYZ(arg: NormalizedLandmark): String {
+        return "${floor(arg.x() * 1000) / 1000}|${floor(arg.y() * 1000) / 1000}|${floor(arg.z() * 1000) / 1000} "
+    }
+
+    private val ROTDIFF = 0.05f
+
     // Update UI after pose have been detected. Extracts original
     // image height/width to scale and place the landmarks properly through
     // OverlayView
@@ -519,14 +592,34 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     ) {
         if (_fragmentCameraBinding != null) {
             if (resultBundle.results.size > 0 && resultBundle.results.first().landmarks().size > 0) {
+                val prevResultTime = lastResultTime
                 lastResultTime = System.currentTimeMillis()
+
+                val currentFps = 1f / ((lastResultTime - prevResultTime) / 1000f)
+                println("Current FPS: $currentFps, $lastResultTime")
+
+                activity?.runOnUiThread {
+                    fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps"
+                }
 
                 if (!::smoothedLandmarks.isInitialized) {
                     // 초기화 시 현재 랜드마크를 그대로 사용
                     smoothedLandmarks = resultBundle.results.first().landmarks().first().toMutableList()
                 }
                 applyLPF(resultBundle.results.first().landmarks().first())
-                detectSuddenMovement(smoothedLandmarks)
+//                detectSuddenMovement(smoothedLandmarks)
+                val currentLandmarks = smoothedLandmarks.map {
+                    Lmark(it.x(), it.y(), it.z())
+                }
+
+                // 이전 프레임 랜드마크가 존재한다면 움직임 계산
+                prevLandmarks?.let { prev ->
+                    // 빠른 움직임 감지
+                    detectFastMovement(prev, currentLandmarks, (lastResultTime - prevResultTime) / 1000f / 30f, 60f)
+                }
+
+                // 현재 프레임을 다음 계산을 위해 prevLandmarks로 저장
+                prevLandmarks = currentLandmarks
 
                 fragmentCameraBinding.overlay.resultsLandmark = smoothedLandmarks
 
@@ -542,340 +635,512 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 //                }
 
                 val marks = resultBundle.results.first().landmarks().first().toMutableList()
+                val marks2 = resultBundle.results.first().worldLandmarks().first().toMutableList()
                 val nose = marks[0]
                 val leftHip = marks[23]
                 val rightHip = marks[24]
-                
-                val baseline = (leftHip.y() + rightHip.y()) / 2f
-                if (nose.y() > baseline) {
-                    println("정상")
-                } else {
-                    println("역방향")
-                }
-                
 
-                // 눈썹
-                val leftEyebrow = marks[1]
-                val rightEyebrow = marks[4]
-                val foreheadZ = (leftEyebrow.z() + rightEyebrow.z()) / 2
-                if (foreheadZ >= 0) {
-                    damageMap["brow"] = (damageMap["brow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["brow"] = (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
+                val leftankle = marks[27]
+                val rightankle = marks[28]
 
-                val brow = damageMap["brow"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", brow / 10f)
+                val leftheel = marks[29]
+                val rightheel = marks[30]
 
-                // 턱
+                val leftfootidx = marks[31]
+                val rightfootidx = marks[32]
+
+                val leftshoulder = marks[11]
+                val rightshoulder = marks[12]
+
                 val leftEar = marks[7]
                 val rightEar = marks[8]
-                val chinZ = (nose.z() + leftEar.z() + rightEar.z()) / 3
-                if (chinZ >= 0) {
-                    damageMap["chin"] = (damageMap["chin"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["chin"] = (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-
-                val chin = damageMap["chin"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "chin", chin / 10f)
-
-                // 왼쪽 귀
-                if (leftEar.z() >= 0) {
-                    damageMap["left_ear"] = (damageMap["left_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_ear"] = (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_ear = damageMap["left_ear"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ear", left_ear / 10f)
-
-                // 오른쪽 귀
-                if (rightEar.z() >= 0) {
-                    damageMap["right_ear"] = (damageMap["right_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_ear"] = (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_ear = damageMap["right_ear"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ear", right_ear / 10f)
-
-//                11 - left shoulder
-//                12 - right shoulder
-
-                // 왼쪽 어깨
-                val leftshoulder = marks[11]
-                if (leftshoulder.z() >= 0) {
-                    damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-
-                val left_shoulder = damageMap["left_shoulder"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_shoulder", left_shoulder / 10f)
-
-                // 오른쪽 어깨
-                val rightshoulder = marks[12]
-                if (rightshoulder.z() >= 0) {
-                    damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-
-                val right_shoulder = damageMap["right_shoulder"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_shoulder", right_shoulder / 10f)
-
-                // 흉골
-
-                val shoulderCenterZ = (leftshoulder.z() + rightshoulder.z()) / 2
-                val hipCenterZ = (leftHip.z() + rightHip.z()) / 2
-                val sternumZ = (shoulderCenterZ + hipCenterZ) / 2
-                if (sternumZ >= 0) {
-                    damageMap["sternum"] = (damageMap["sternum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["sternum"] = (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val sternum = damageMap["sternum"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "sternum", sternum / 10f)
-
-                // 갈비뼈
-                val ribZ = shoulderCenterZ + (hipCenterZ - shoulderCenterZ) * 0.33f
-                if (ribZ >= 0) {
-                    damageMap["rib"] = (damageMap["rib"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val rib = damageMap["rib"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "rib", rib / 10f)
-
-                // 왼쪽 무릎
-                val leftknee = marks[25]
-                if (leftknee.z() >= 0) {
-                    damageMap["left_knee"] = (damageMap["left_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_knee"] = (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_knee = damageMap["left_knee"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_knee", left_knee / 10f)
-
-                // 오른쪽 무릎
-                val rightknee = marks[26]
-                if (rightknee.z() >= 0) {
-                    damageMap["right_knee"] = (damageMap["right_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_knee"] = (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_knee = damageMap["right_knee"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_knee", right_knee / 10f)
-
-                // 왼쪽 장골
-                if (leftHip.z() >= 0) {
-                    damageMap["left_ilium"] = (damageMap["left_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_ilium = damageMap["left_ilium"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ilium", left_ilium / 10f)
-
-                // 오른쪽 장골
-                if (rightHip.z() >= 0) {
-                    damageMap["right_ilium"] = (damageMap["right_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_ilium = damageMap["right_ilium"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ilium", right_ilium / 10f)
 
                 val leftelbow = marks[13]
                 val rightelbow = marks[14]
 
-                // 왼쪽 팔꿈치
-                if (leftelbow.z() >= 0 && rightelbow.z() <= 0) {
-                    damageMap["left_elbow"] = (damageMap["left_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_elbow"] = (damageMap["left_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                }
-                val left_elbow = damageMap["left_elbow"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_elbow", left_elbow / 10f)
+                val baseline = (leftHip.y() + rightHip.y()) / 2f
+//                if (nose.y() > baseline) {
+//                    println("정상")
+//                } else {
+//                    println("역방향")
+//                }
 
-                // 오른쪽 팔꿈치
-                if (rightelbow.z() >= 0 && leftelbow.z() <= 0) {
-                    damageMap["right_elbow"] = (damageMap["right_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_elbow"] = (damageMap["right_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                }
-                val right_elbow = damageMap["right_elbow"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_elbow", right_elbow / 10f)
+                // 뒷통수, 견갑, 천골, 힙, 뒷꿈치
+                val diffShoulder = abs(leftshoulder.z() - rightshoulder.z())
+                val diffhip = abs(leftHip.z() - rightHip.z())
+                val diffankle = abs(leftankle.z() - rightankle.z())
+                val diffear = abs(leftEar.z() - rightEar.z())
+                var diffleftidx = abs(leftheel.x() - leftfootidx.x())
+                var diffrightidx = abs(rightheel.x() - rightfootidx.x())
 
-                // 왼쪽 종아리
-                // 왼쪽 바깥쪽 발목뼈
-                if (leftknee.z() >= 0 && rightknee.z() <= 0) {
-                    damageMap["left_calf"] = (damageMap["left_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_calf"] = (damageMap["left_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                }
-                val left_calf = damageMap["left_calf"]?.toFloat()  ?: 0f
-                val left_anklebone = damageMap["left_anklebone"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_calf", left_calf / 10f)
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_anklebone", left_anklebone / 10f)
+                if (diffear < ROTDIFF && diffShoulder < ROTDIFF && diffhip < ROTDIFF && diffankle < ROTDIFF) {
+                    println("diffear < ROTDIFF && diffShoulder < ROTDIFF && diffhip < ROTDIFF && diffankle < ROTDIFF")
+                    if (leftshoulder.x() < rightshoulder.x()) {
+                        damageMap["occipital"] = (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
 
-                // 오른쪽 종아리
-                // 오른쪽 바깥쪽 발목뼈
-                if (rightknee.z() >= 0 && leftknee.z() <= 0) {
-                    damageMap["right_calf"] = (damageMap["right_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_calf"] = (damageMap["right_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                }
-                val right_calf = damageMap["right_calf"]?.toFloat()  ?: 0f
-                val right_anklebone = damageMap["right_anklebone"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_calf", right_calf / 10f)
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_anklebone", right_anklebone / 10f)
-
-
-                val leftankle = marks[27]
-                val rightankle = marks[28]
-                //왼쪽 안쪽 발목뼈
-                if (leftankle.z() >= 0 && leftHip.z() <= 0) {
-                    damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_in_anklebone = damageMap["left_in_anklebone"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_in_anklebone", left_in_anklebone / 10f)
-
-                //오른쪽 안쪽 발목뼈
-                if (rightankle.z() >= 0 && rightHip.z() <= 0) {
-                    damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_in_anklebone = damageMap["right_in_anklebone"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_in_anklebone", right_in_anklebone / 10f)
-
-                // 후두골
-                val earCenterZ = (leftEar.z() + rightEar.z()) / 2
-                val occipitalZ = earCenterZ - (nose.z() - earCenterZ)
-                if (occipitalZ >= 0) {
-                    damageMap["occipital"] = (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val occipital = damageMap["occipital"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "occipital", occipital / 10f)
-
-                //왼쪽 견갑골
-                if (leftshoulder.z() >= 0 && rightshoulder.z() >= 0) {
-                    damageMap["left_scapula"] = (damageMap["left_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_scapula"] = (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_scapula = damageMap["left_scapula"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_scapula", left_scapula / 10f)
-
-                // 오른쪽 견갑골
-                if (rightshoulder.z() >= 0 && leftshoulder.z() >= 0) {
-                    damageMap["right_scapula"] = (damageMap["right_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_scapula"] = (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_scapula = damageMap["right_scapula"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_scapula", right_scapula / 10f)
-
-                // 왼쪽 앙콘
-                // 오른쪽 앙콘
-                if (leftelbow.z() >= 0 && rightelbow.z() >= 0) {
-                    damageMap["left_ancon"] = (damageMap["left_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    damageMap["right_ancon"] = (damageMap["right_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                    damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_ancon = damageMap["left_ancon"]?.toFloat()  ?: 0f
-                val right_ancon = damageMap["right_ancon"]?.toFloat()  ?: 0f
-
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ancon", left_ancon / 10f)
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ancon", right_ancon / 10f)
-
-                // 천골
-                // 왼쪽 힙
-                // 오른쪽 힙
-                if (hipCenterZ >= 0) {
-                    damageMap["sacrum"] = (damageMap["sacrum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                    if (leftHip.z() >= 0) {
+                        damageMap["sacrum"] = (damageMap["sacrum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_scapula"] = (damageMap["left_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_scapula"] = (damageMap["right_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
                         damageMap["left_hip"] = (damageMap["left_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                        if (rightHip.z() <= 0) {
-                            damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                        // 팔꿈치
+                        if (leftshoulder.z() < leftelbow.z()) {
+                            damageMap["left_ancon"] =
+                                (damageMap["left_ancon"]?.plus(1) ?: stepup).coerceAtMost(1000)
                         } else {
-                            damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+
+                        if (rightshoulder.z() < rightelbow.z()) {
+                            damageMap["right_ancon"] =
+                                (damageMap["right_ancon"]?.plus(1) ?: stepup).coerceAtMost(1000)
+                        }else {
+                            damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+
+                        // 팔꿈치 근처
+                        damageMap["left_elbow"] = (damageMap["left_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_elbow"] = (damageMap["right_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 어깨
+                        damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 장골
+                        damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_calf"] = (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] = (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_ear"] = (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ear"] = (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["brow"] = (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["chin"] = (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sternum"] = (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_knee"] = (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_knee"] = (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    } else {
+                        println("뒷면")
+                        damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_scapula"] = (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_scapula"] = (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_elbow"] = (damageMap["left_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_elbow"] = (damageMap["right_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_calf"] = (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] = (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_ear"] = (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ear"] = (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["brow"] = (damageMap["brow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["chin"] = (damageMap["chin"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["sternum"] = (damageMap["sternum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["rib"] = (damageMap["rib"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_knee"] = (damageMap["left_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_knee"] = (damageMap["right_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    }
+
+                } else if (diffShoulder < ROTDIFF && diffhip < ROTDIFF && diffankle < ROTDIFF) {
+                    println("diffShoulder < ROTDIFF && diffhip < ROTDIFF && diffankle < ROTDIFF")
+                    // 정상적으로 누움
+                    if (leftshoulder.x() < rightshoulder.x()) {
+                        damageMap["sacrum"] =
+                            (damageMap["sacrum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_scapula"] =
+                            (damageMap["left_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_scapula"] =
+                            (damageMap["right_scapula"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_hip"] =
+                            (damageMap["left_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_hip"] =
+                            (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_heel"] =
+                            (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_heel"] =
+                            (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                        // 팔꿈치
+                        if (leftshoulder.z() < leftelbow.z()) {
+                            damageMap["left_ancon"] =
+                                (damageMap["left_ancon"]?.plus(1) ?: stepup).coerceAtMost(1000)
+                        } else {
+                            damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+
+                        if (rightshoulder.z() < rightelbow.z()) {
+                            damageMap["right_ancon"] =
+                                (damageMap["right_ancon"]?.plus(1) ?: stepup).coerceAtMost(1000)
+                        }else {
+                            damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+
+                        // 팔꿈치 근처
+                        damageMap["left_elbow"] =
+                            (damageMap["left_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_elbow"] =
+                            (damageMap["right_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 어깨
+                        damageMap["left_shoulder"] =
+                            (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_shoulder"] =
+                            (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 장골
+                        damageMap["left_ilium"] =
+                            (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] =
+                            (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_anklebone"] =
+                            (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] =
+                            (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] =
+                            (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] =
+                            (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_calf"] =
+                            (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] =
+                            (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["brow"] =
+                            (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["chin"] =
+                            (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sternum"] =
+                            (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_knee"] =
+                            (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_knee"] =
+                            (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 귀
+                        checkEar(leftEar, rightEar)
+                        checkOccipital(diffear)
+
+                        damageMap["brow"] = (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["chin"] = (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sternum"] = (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_knee"] = (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_knee"] = (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    } else {
+                        println("뒷면")
+                        damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_scapula"] = (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_scapula"] = (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_ancon"] = (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ancon"] = (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_elbow"] = (damageMap["left_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_elbow"] = (damageMap["right_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_shoulder"] = (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_shoulder"] = (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_calf"] = (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] = (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        checkEar(leftEar, rightEar)
+
+                        damageMap["brow"] = (damageMap["brow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["chin"] = (damageMap["chin"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["sternum"] = (damageMap["sternum"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["rib"] = (damageMap["rib"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_knee"] = (damageMap["left_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_knee"] = (damageMap["right_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    }
+
+                } else if (diffhip < ROTDIFF && diffankle < ROTDIFF){
+                    println("diffhip < ROTDIFF && diffankle < ROTDIFF")
+                    // 어깨가 회전
+                    damageMap["sacrum"] =
+                        (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["left_scapula"] =
+                        (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["right_scapula"] =
+                        (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                    if (leftHip.x() < rightHip.x()) {
+                        damageMap["left_hip"] =
+                            (damageMap["left_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_hip"] =
+                            (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["left_heel"] =
+                            (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_heel"] =
+                            (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                        damageMap["left_anklebone"] =
+                            (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] =
+                            (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] =
+                            (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] =
+                            (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_calf"] =
+                            (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] =
+                            (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        // 팔꿈치, 팔꿈치 근처, 좌우 장골, 어깨
+                        checkShoulder(leftshoulder, rightshoulder)
+                        damageMap["left_ilium"] =
+                            (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] =
+                            (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["brow"] =
+                            (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["chin"] =
+                            (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["sternum"] =
+                            (damageMap["sternum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["rib"] = (damageMap["rib"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_knee"] =
+                            (damageMap["left_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_knee"] =
+                            (damageMap["right_knee"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        if (diffear < ROTDIFF) {
+                            damageMap["occipital"] =
+                                (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_ear"] =
+                                (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                            damageMap["right_ear"] =
+                                (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        } else {
+                            checkEar(leftEar, rightEar)
+                            checkOccipital(diffear)
                         }
                     } else {
+
                         damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                        if (rightHip.z() >= 0) {
-                            damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_anklebone"] =
+                            (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_anklebone"] =
+                            (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["left_in_anklebone"] =
+                            (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_in_anklebone"] =
+                            (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_calf"] =
+                            (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_calf"] =
+                            (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        damageMap["left_knee"] = (damageMap["left_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_knee"] = (damageMap["right_knee"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                        damageMap["left_ilium"] =
+                            (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] =
+                            (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    }
+
+                } else {
+                    println("else ============")
+                    // 하체도 회전
+//                    damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["left_scapula"] = (damageMap["left_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    damageMap["right_scapula"] = (damageMap["right_scapula"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                    // 팔꿈치, 팔꿈치 근처, 좌우 장골, 어깨
+                    checkShoulder(leftshoulder, rightshoulder)
+
+                    if (diffhip < ROTDIFF) {
+                        damageMap["left_hip"] = (damageMap["left_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_hip"] = (damageMap["right_hip"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                        damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    }
+                    else {
+                        damageMap["left_hip"] =
+                            (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_hip"] =
+                            (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        if (leftHip.z() > rightHip.z()) {
+                            // 장골
+                            damageMap["left_ilium"] = (damageMap["left_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["right_ilium"] = (damageMap["right_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
                         } else {
-                            damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                            // 장골
+                            damageMap["right_ilium"] = (damageMap["right_ilium"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_ilium"] = (damageMap["left_ilium"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
                         }
                     }
-                } else {
-                    damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                    damageMap["left_hip"] = (damageMap["left_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                    damageMap["right_hip"] = (damageMap["right_hip"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                    if (diffankle < ROTDIFF) {
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    } else {
+                        damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                        if (leftankle.z() > rightankle.z()) {
+                            damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                            damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                            damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                            damageMap["left_calf"] = (damageMap["left_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["right_calf"] = (damageMap["right_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        } else {
+                            damageMap["right_anklebone"] = (damageMap["right_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_in_anklebone"] = (damageMap["left_in_anklebone"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+                            damageMap["left_anklebone"] = (damageMap["left_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                            damageMap["right_in_anklebone"] = (damageMap["right_in_anklebone"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+                            damageMap["right_calf"] = (damageMap["right_calf"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_calf"] = (damageMap["left_calf"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        }
+                    }
+
+                    if (leftshoulder.x() < rightshoulder.x()) {
+                        if (diffear < ROTDIFF) {
+                            damageMap["occipital"] =
+                                (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                            damageMap["left_ear"] =
+                                (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                            damageMap["right_ear"] =
+                                (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        } else {
+                            checkEar(leftEar, rightEar)
+                            checkOccipital(diffear)
+                        }
+
+                        damageMap["brow"] =
+                            (damageMap["brow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["chin"] =
+                            (damageMap["chin"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                    } else {
+                        checkEar(leftEar, rightEar)
+                        damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+                        damageMap["brow"] = (damageMap["brow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                        damageMap["chin"] = (damageMap["chin"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+                    }
                 }
+
+                val occipital = damageMap["occipital"]?.toFloat()  ?: 0f
                 val sacrum = damageMap["sacrum"]?.toFloat()  ?: 0f
+                val left_scapula = damageMap["left_scapula"]?.toFloat()  ?: 0f
+                val right_scapula = damageMap["right_scapula"]?.toFloat()  ?: 0f
+                val left_heel = damageMap["left_heel"]?.toFloat()  ?: 0f
+                val right_heel = damageMap["right_heel"]?.toFloat()  ?: 0f
+                val left_ancon = damageMap["left_ancon"]?.toFloat()  ?: 0f
+                val right_ancon = damageMap["right_ancon"]?.toFloat()  ?: 0f
                 val left_hip = damageMap["left_hip"]?.toFloat()  ?: 0f
                 val right_hip = damageMap["right_hip"]?.toFloat()  ?: 0f
+
+                val left_elbow = damageMap["left_elbow"]?.toFloat()  ?: 0f
+                val right_elbow = damageMap["right_elbow"]?.toFloat()  ?: 0f
+
+                val left_ilium = damageMap["left_ilium"]?.toFloat()  ?: 0f
+                val right_ilium = damageMap["right_ilium"]?.toFloat()  ?: 0f
+
+                val left_anklebone = damageMap["left_anklebone"]?.toFloat()  ?: 0f
+                val right_anklebone = damageMap["right_anklebone"]?.toFloat()  ?: 0f
+                val left_in_anklebone = damageMap["left_in_anklebone"]?.toFloat()  ?: 0f
+                val right_in_anklebone = damageMap["right_in_anklebone"]?.toFloat()  ?: 0f
+
+                val left_calf = damageMap["left_calf"]?.toFloat()  ?: 0f
+                val right_calf = damageMap["right_calf"]?.toFloat()  ?: 0f
+
+                val left_ear = damageMap["left_ear"]?.toFloat()  ?: 0f
+                val right_ear = damageMap["right_ear"]?.toFloat()  ?: 0f
+
+                val brow = damageMap["brow"]?.toFloat()  ?: 0f
+                val chin = damageMap["chin"]?.toFloat()  ?: 0f
+                val sternum = damageMap["sternum"]?.toFloat()  ?: 0f
+                val rib = damageMap["rib"]?.toFloat()  ?: 0f
+
+                val left_knee = damageMap["left_knee"]?.toFloat()  ?: 0f
+                val right_knee = damageMap["right_knee"]?.toFloat()  ?: 0f
+
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "occipital", occipital / 10f)
                 _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "sacrum", sacrum / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_scapula", left_scapula / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_scapula", right_scapula / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_heel", left_heel / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_heel", right_heel / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ancon", left_ancon / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ancon", right_ancon / 10f)
                 _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_hip", left_hip / 10f)
                 _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_hip", right_hip / 10f)
 
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_elbow", left_elbow / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_elbow", right_elbow / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ilium", left_ilium / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ilium", right_ilium / 10f)
 
-                val leftheel = marks[29]
-                val rightheel = marks[30]
-                // 왼쪽 발꿈치
-                if (leftheel.z() >= 0) {
-                    damageMap["left_heel"] = (damageMap["left_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["left_heel"] = (damageMap["left_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val left_heel = damageMap["left_heel"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_heel", left_heel / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_anklebone", left_anklebone / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_anklebone", right_anklebone / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_in_anklebone", left_in_anklebone / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_in_anklebone", right_in_anklebone / 10f)
 
-                // 오른쪽 발꿈치
-                if (rightheel.z() >= 0) {
-                    damageMap["right_heel"] = (damageMap["right_heel"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
-                } else {
-                    damageMap["right_heel"] = (damageMap["right_heel"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
-                }
-                val right_heel = damageMap["right_heel"]?.toFloat()  ?: 0f
-                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_heel", right_heel / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_calf", left_calf / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_calf", right_calf / 10f)
 
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_ear", left_ear / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_ear", right_ear / 10f)
 
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", brow / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "chin", chin / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "sternum", sternum / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "rib", rib / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "left_knee", left_knee / 10f)
+                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "right_knee", right_knee / 10f)
 
-                // 히트맵
-// 코 (인덱스 0), 왼쪽 엉덩이 (인덱스 23), 왼쪽 어깨 (인덱스 11)의 z좌표
-//                val noseZ = worldLandmarks[0].z()
-//                val leftHipZ = worldLandmarks[23].z()
-//                val leftShoulderZ = worldLandmarks[11].z()
-
-//                println ("noseZ : $noseZ, leftHipZ: $leftHipZ, leftShoulderZ: $leftShoulderZ")
-
-//// 상체와 하체의 z좌표 차이 계산
-//                val bodyZDiff = abs(noseZ - leftHipZ)
-//                val upperBodyZDiff = abs(leftShoulderZ - leftHipZ)
-//
-//// 임계값 설정
-//                val zThreshold = 0.1f
-//
-//                if (bodyZDiff < zThreshold) {
-//                    println("누워있는 상태입니다.")
-//                } else if (upperBodyZDiff > zThreshold) {
-//                    println("앉아있는 상태입니다.")
-//                } else {
-//                    println("기타 자세입니다.")
-//                }
-//                _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", "brow", foreheadDistance)
             }
         }
 
@@ -891,6 +1156,74 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 
                 fragmentCameraBinding.overlay.invalidate()
             }
+        }
+    }
+
+    private fun checkShoulder(
+        leftshoulder: NormalizedLandmark,
+        rightshoulder: NormalizedLandmark
+    ) {
+
+        if (leftshoulder.z() > rightshoulder.z()) {
+            // 팔꿈치
+            damageMap["left_ancon"] =
+                (damageMap["left_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["right_ancon"] =
+                (damageMap["right_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+            // 팔꿈치 근처
+            damageMap["left_elbow"] =
+                (damageMap["left_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["right_elbow"] =
+                (damageMap["right_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+            // 어깨
+            damageMap["left_shoulder"] =
+                (damageMap["left_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["right_shoulder"] =
+                (damageMap["right_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+        } else {
+            // 팔꿈치
+            damageMap["right_ancon"] =
+                (damageMap["right_ancon"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["left_ancon"] =
+                (damageMap["left_ancon"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+
+            // 팔꿈치 근처
+            damageMap["left_elbow"] =
+                (damageMap["left_elbow"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+            damageMap["right_elbow"] =
+                (damageMap["right_elbow"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+
+            // 어깨
+            damageMap["right_shoulder"] =
+                (damageMap["right_shoulder"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["left_shoulder"] =
+                (damageMap["left_shoulder"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+        }
+    }
+
+    private fun checkOccipital(diffear: Float) {
+        if (diffear < 0.085f) {
+            damageMap["occipital"] =
+                (damageMap["occipital"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+        } else {
+            damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+        }
+    }
+
+    private fun checkEar(
+        leftEar: NormalizedLandmark,
+        rightEar: NormalizedLandmark
+    ) {
+        if (leftEar.z() > rightEar.z()) {
+            damageMap["left_ear"] =
+                (damageMap["left_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["right_ear"] = (damageMap["right_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
+        } else {
+            damageMap["right_ear"] =
+                (damageMap["right_ear"]?.plus(stepup) ?: stepup).coerceAtMost(1000)
+            damageMap["left_ear"] = (damageMap["left_ear"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
         }
     }
 
