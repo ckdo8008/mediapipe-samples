@@ -124,15 +124,15 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val responseCode = connection.responseCode
-                println("Response Code: $responseCode")
+//                println("Response Code: $responseCode")
             } catch (e: Exception) {
-                println("Error calling Lambda: $e")
+//                println("Error calling Lambda: $e")
                 isNotCall = true
             }
 
             if (!isNotCall) {
                 if (getStatus() != status) {
-                    println("Fail data : ${getStatus()}")
+//                    println("Fail data : ${getStatus()}")
                     callLambdaFunction(status)
                 }
             }

@@ -223,7 +223,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
     private fun reduceDamageOverTime() {
         handler.postDelayed(object : Runnable {
             override fun run() {
-                println("reduceDamageOverTime run")
+//                println("reduceDamageOverTime run")
                 val currentTime = System.currentTimeMillis()
                 if (currentTime - lastResultTime >= damageReductionInterval) {
                     // 데미지 감소 로직
@@ -232,7 +232,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                         val value = damageMap[key] ?: 0
                         _fragmentCameraBinding?.riveAnimationView?.setNumberState("State Machine", key, value.toFloat() / 10f)
                     }
-                    println("데미지 감소 적용: $damageMap")
+//                    println("데미지 감소 적용: $damageMap")
                 }
                 handler.postDelayed(this, damageReductionInterval)
             }
@@ -596,11 +596,9 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                 lastResultTime = System.currentTimeMillis()
 
                 val currentFps = 1f / ((lastResultTime - prevResultTime) / 1000f)
-                println("Current FPS: $currentFps, $lastResultTime")
+//                println("Current FPS: $currentFps, $lastResultTime")
 
-                activity?.runOnUiThread {
-                    fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps"
-                }
+
 
                 if (!::smoothedLandmarks.isInitialized) {
                     // 초기화 시 현재 랜드마크를 그대로 사용
@@ -623,16 +621,30 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 
                 fragmentCameraBinding.overlay.resultsLandmark = smoothedLandmarks
 
+                var checkjoin = false
                 // 끼임 방지
-//                checkLandmark.forEach {
-//                    val point = Point(
-//                        (smoothedLandmarks[it].x() * 640f).toInt(),
-//                        (smoothedLandmarks[it].y() * 480f).toInt())
-//                    val chk = isPointInsideTrapezoid(
-//                        point, trapezoid)
-//
-//                    if (!chk) println("끼임 : $it : ${smoothedLandmarks[it]} $point")
-//                }
+                checkLandmark.forEach {
+                    val point = Point(
+                        (smoothedLandmarks[it].x() * 640f).toInt(),
+                        (smoothedLandmarks[it].y() * 480f).toInt())
+                    val chk = isPointInsideTrapezoid(
+                        point, trapezoid)
+                    if (!chk) {
+                        checkjoin = true
+//                        println("끼임 : $it : ${smoothedLandmarks[it]} $point")
+                    }
+
+                }
+
+                if (checkjoin) {
+                    activity?.runOnUiThread {
+                        fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps\n끼임 위험지역"
+                    }
+                } else {
+                    activity?.runOnUiThread {
+                        fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps\n"
+                    }
+                }
 
                 val marks = resultBundle.results.first().landmarks().first().toMutableList()
                 val marks2 = resultBundle.results.first().worldLandmarks().first().toMutableList()
@@ -658,7 +670,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                 val leftelbow = marks[13]
                 val rightelbow = marks[14]
 
-                val baseline = (leftHip.y() + rightHip.y()) / 2f
+//                val baseline = (leftHip.y() + rightHip.y()) / 2f
 //                if (nose.y() > baseline) {
 //                    println("정상")
 //                } else {
@@ -984,7 +996,7 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
                     }
 
                 } else {
-                    println("else ============")
+//                    println("else ============")
                     // 하체도 회전
 //                    damageMap["occipital"] = (damageMap["occipital"]?.minus(stepdown) ?: 0).coerceAtLeast(0)
                     damageMap["sacrum"] = (damageMap["sacrum"]?.minus(stepdown) ?: 0).coerceAtLeast(0)

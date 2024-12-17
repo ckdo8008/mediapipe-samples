@@ -496,6 +496,8 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         this.imageHeight = imageHeight
         this.imageWidth = imageWidth
 
+//        println("imageWidth : $imageWidth, imageHeight : $imageHeight")
+
         scaleFactor = when (runningMode) {
             RunningMode.IMAGE,
             RunningMode.VIDEO -> {
@@ -535,6 +537,15 @@ class OverlayView(context: Context?, attrs: AttributeSet?) :
         bottomredLeftY = topredLeftY + (cropredHeight * scaleFactor).toInt()
         bottomredRightX = bottomredLeftX + (cropredWidthBottom * scaleFactor).toInt()
         bottomredRightY = bottomredLeftY
+
+//        topredLeftX = 250 * scaleFactor
+//        topredLeftY = 40 * scaleFactor
+//        topredRightX = 390 * scaleFactor
+//        topredRightY = topredLeftY
+//        bottomredLeftX = 100 * scaleFactor
+//        bottomredLeftY = 440 * scaleFactor
+//        bottomredRightX = 500 * scaleFactor
+//        bottomredRightY = bottomredLeftY
 
 //        invalidate()
     }
