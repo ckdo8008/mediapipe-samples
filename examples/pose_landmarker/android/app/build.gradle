@@ -22,23 +22,25 @@ plugins {
 
 android {
     packagingOptions {
-        pickFirst 'lib/arm64-v8a/libc++_shared.so'
-        pickFirst 'lib/x86/libc++_shared.so'
-        pickFirst 'lib/x86_64/libc++_shared.so'
-        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        jniLibs {
+            pickFirsts += ['lib/arm64-v8a/libc++_shared.so', 'lib/x86/libc++_shared.so', 'lib/x86_64/libc++_shared.so', 'lib/armeabi-v7a/libc++_shared.so']
+        }
     }
 
     namespace 'com.google.mediapipe.examples.poselandmarker'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.google.mediapipe.examples.poselandmarker"
-        minSdk 24
-        targetSdk 34
+        minSdk 30
+        targetSdk 35
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
 
     buildTypes {
@@ -59,6 +61,14 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    packagingOptions {
+        pickFirst '**/*.so'
+    }
+
+    aaptOptions {
+        noCompress "tflite", "task"
+    }
 }
 
 // import DownloadMPTasks task
@@ -68,21 +78,22 @@ apply from: 'download_tasks.gradle'
 dependencies {
 
     // Kotlin lang
-    implementation 'androidx.core:core-ktx:1.8.0'
+    implementation 'androidx.core:core-ktx:1.15.0'
 
     // App compat and UI things
-    implementation 'androidx.appcompat:appcompat:1.5.1'
-    implementation 'com.google.android.material:material:1.7.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.fragment:fragment-ktx:1.5.4'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+    implementation 'androidx.fragment:fragment-ktx:1.8.5'
+    implementation 'com.google.mlkit:pose-detection-common:17.0.0'
 
     // Navigation library
-    def nav_version = "2.5.3"
+    def nav_version = "2.8.4"
     implementation "androidx.navigation:navigation-fragment-ktx:$nav_version"
     implementation "androidx.navigation:navigation-ui-ktx:$nav_version"
 
     // CameraX core library
-    def camerax_version = '1.3.4'
+    def camerax_version = '1.4.0'
     implementation "androidx.camera:camera-core:$camerax_version"
 
     // CameraX Camera2 extensions
@@ -95,7 +106,7 @@ dependencies {
     implementation "androidx.camera:camera-view:$camerax_version"
 
     // WindowManager
-    implementation 'androidx.window:window:1.1.0-alpha03'
+    implementation 'androidx.window:window:1.3.0'
 
     // Unit testing
     testImplementation 'junit:junit:4.13.2'
@@ -105,7 +116,8 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
 
     // MediaPipe Library
-    implementation 'com.google.mediapipe:tasks-vision:latest.release'
+    implementation 'com.google.mediapipe:tasks-vision:0.20230731'
+//    implementation 'com.google.mediapipe:tasks-vision:latest.release'
 //    implementation 'com.google.ar.sceneform.ux:sceneform-ux:1.17.1'
 //    implementation 'com.google.ar:core:1.46.0'
 //
@@ -114,4 +126,7 @@ dependencies {
 //    }
     implementation "io.github.sceneview:sceneview:2.0.3"
     implementation project(":opencv")
+
+    implementation 'app.rive:rive-android:9.12.0'
+    implementation 'io.github.shashank02051997:FancyToast:2.0.1'
 }
