@@ -66,4 +66,6 @@ class MainViewModel : ViewModel() {
 
     val rawbedStatus: MutableLiveData<Boolean> = MutableLiveData()
     val bedStatus: MutableLiveData<Boolean> = MutableLiveData()
+
+    val callStatus: MutableLiveData<Boolean> = MutableLiveData()
 }

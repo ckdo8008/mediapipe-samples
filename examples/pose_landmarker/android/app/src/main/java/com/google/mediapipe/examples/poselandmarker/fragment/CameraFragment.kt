@@ -638,10 +638,12 @@ class CameraFragment : Fragment(), PoseLandmarkerHelper.LandmarkerListener {
 
                 if (checkjoin) {
                     activity?.runOnUiThread {
+                        viewModel.callStatus.value = true
                         fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps\n끼임 위험지역"
                     }
                 } else {
                     activity?.runOnUiThread {
+                        viewModel.callStatus.value = false
                         fragmentCameraBinding.txtStatus.text = "Current FPS: $currentFps\n"
                     }
                 }
