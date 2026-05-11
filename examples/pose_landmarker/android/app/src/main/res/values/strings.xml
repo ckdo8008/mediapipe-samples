@@ -45,7 +45,7 @@
     <string name="label_num_poses">Number of Poses</string>
     <string name="label_delegate">Delegate</string>
     <string name="label_models">Model</string>
-    <string name="toolbar_title">침대모니터링</string>
+    <string name="toolbar_title">자세추정</string>
 
     <string-array name="delegate_spinner_titles">
         <item>CPU</item>

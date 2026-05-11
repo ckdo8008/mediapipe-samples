@@ -34,6 +34,7 @@
         android:layout_marginLeft="20dp"
         android:layout_width="400dp"
         android:layout_height="400dp"
+        android:visibility="invisible"
         app:riveResource="@raw/bodymap" />
 
 <!--    <android.opengl.GLSurfaceView-->
@@ -51,6 +52,7 @@
         android:textColor="#ff0000"
         android:textSize="20sp"
         android:textFontWeight="600"
+        android:visibility="invisible"
         android:layout_width="500dp"
         android:layout_height="400dp" />
 

@@ -60,6 +60,7 @@
                     android:layout_height="wrap_content"
                     android:layout_gravity="end"
                     android:text="이석"
+                    android:visibility="invisible"
                     android:layout_marginEnd="10dp"
                     android:id="@+id/status" />
             </GridLayout>
