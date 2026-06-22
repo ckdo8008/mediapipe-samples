@@ -19,3 +19,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+-keep class app.rive.runtime.kotlin.** { *; }
+-keep class app.rive.runtime.kotlin.core.** { *; }
+-keep class com.google.mediapipe.** { *; }
+-keep class com.google.mediapipe.tasks.** { *; }
+-keep class com.google.mediapipe.framework.** { *; }
+-keep class com.google.mediapipe.components.** { *; }
+-keep class com.google.mediapipe.glutil.** { *; }
+-keep class com.google.mediapipe.proto.** { *; }
+-keep class com.google.protobuf.** { *; }
+-keep class com.google.mediapipe.tasks.vision.** { *; }
