@@ -125,7 +125,7 @@ dependencies {
 //        exclude group: 'com.android.support'
 //    }
     implementation "io.github.sceneview:sceneview:2.0.3"
-    implementation project(":opencv")
+    implementation project(":opencvn")
 
     implementation 'app.rive:rive-android:9.12.0'
     implementation 'io.github.shashank02051997:FancyToast:2.0.1'
